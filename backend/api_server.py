@@ -235,7 +235,67 @@ def free_model_memory(target="all"):
     print("Memory cleanup complete.")
 
 
+
+def gpt4o_sketch_to_layout(image_path):
+    """Uses GPT-4o Vision to extract layout, objects, and caption, bypassing Florence-2 entirely on low RAM."""
+    import base64
+    from PIL import Image
+    import json
+    
+    # 1. Base64 encode the image
+    with open(image_path, "rb") as image_file:
+        base64_image = base64.b64encode(image_file.read()).decode('utf-8')
+        
+    client = get_openai_client()
+    
+    prompt = """Analyze this hand-drawn game level sketch. 
+Return ONLY a valid JSON block with these exact keys:
+- "caption": A detailed description of what the sketch depicts.
+- "objects": A list of detected objects (e.g., character, enemy, chest, spikes). For each, give {"type": "name", "position": [col, row], "bbox": [ymin, xmin, ymax, xmax]} where col is 0-23, row is 0-11, and bbox values are 0-1000.
+- "layout": {"platforms": [[col, row], ...], "player": [col, row], "enemies": [[col, row], ...], "items": [[col, row], ...]} where col is 0-23 and row is 0-11.
+- "scene": {"environment": "fantasy/city/dungeon/etc", "camera": "side_view/top_down/behind_car"}
+Do not include markdown blocks or any other text, just the raw JSON."""
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
+                    ]
+                }
+            ],
+            max_tokens=1000,
+            temperature=0.2
+        )
+        raw = response.choices[0].message.content.strip()
+        raw = raw.replace("```json", "").replace("```", "").strip()
+        data = json.loads(raw)
+        
+        layout = data.get("layout", {"platforms": []})
+        caption = data.get("caption", "A hand-drawn game level sketch")
+        
+        vision_info = {
+            "caption": caption,
+            "objects": data.get("objects", []),
+            "scene": data.get("scene", {"environment": "fantasy", "camera": "side_view"}),
+            "spatial_relations": []
+        }
+        
+        return layout, caption, json.dumps(data.get("objects", [])), vision_info
+        
+    except Exception as e:
+        print(f"GPT-4o Vision analysis failed: {e}")
+        return None, "A hand-drawn game level sketch", "", {"objects": [], "scene": {"environment": "fantasy", "camera": "side_view"}}
+
 def sketch_to_layout(image_path):
+    if DEVICE == "cpu":
+        print("[Memory-Save] Bypassing Florence-2 and using GPT-4o Vision for sketch analysis.")
+        return gpt4o_sketch_to_layout(image_path)
+
     raw_caption = "A hand-drawn game level sketch"
     raw_od = ""
     vision_status = "unavailable"
@@ -2540,7 +2600,9 @@ def run_full_pipeline(image_path, user_description="Create a game based on the p
     # Check model loading availability and load Florence-2
     vision_loaded = False
     try:
-        ensure_florence_loaded()
+        if DEVICE != "cpu":
+            ensure_florence_loaded()
+
         vision_loaded = (florence_model is not None)
     except Exception as e:
         print(f"Florence load note: {e}")
