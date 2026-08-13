@@ -206,12 +206,34 @@ def ensure_clip_loaded():
 def sketch_to_layout(image_path):
     raw_caption = "A hand-drawn game level sketch"
     raw_od = ""
-    if DEVICE == "cuda" and florence_model is not None:
+    vision_status = "unavailable"
+    objects = []
+    scene = {"environment": "fantasy", "camera": "side_view"}
+    visual_genre_evidence = []
+    layout = None
+
+    if florence_model is not None:
+        vision_status = "available"
         try:
             import torch
             img = Image.open(image_path).convert("RGB")
-            dtype = torch.float16
+            dtype = torch.float16 if DEVICE == "cuda" else torch.float32
             
+            # 1. Run Fine-tuned LoRA for Layout Extraction
+            inputs_layout = florence_processor(
+                text="<DETAILED_CAPTION>", images=img, return_tensors="pt"
+            ).to(DEVICE, dtype)
+            with torch.no_grad():
+                gen_layout = florence_model.generate(**inputs_layout, max_new_tokens=1024, do_sample=False)
+            raw_layout_str = florence_processor.tokenizer.decode(gen_layout[0], skip_special_tokens=True)
+            try:
+                layout = json.loads(raw_layout_str)
+                print("[AI-Layout] Successfully parsed LoRA-predicted layout.")
+            except Exception as le:
+                print(f"[AI-Layout-Error] Failed to parse LoRA layout JSON: {le}. Raw string: {raw_layout_str[:200]}")
+                layout = None
+
+            # 2. Run detailed caption
             inputs_cap = florence_processor(
                 text="<MORE_DETAILED_CAPTION>", images=img, return_tensors="pt"
             ).to(DEVICE, dtype)
@@ -219,114 +241,271 @@ def sketch_to_layout(image_path):
                 gen_cap = florence_model.generate(**inputs_cap, max_new_tokens=256, do_sample=False)
             raw_caption = florence_processor.tokenizer.decode(gen_cap[0], skip_special_tokens=True)
 
+            # 3. Run Object Detection
             inputs_od = florence_processor(
                 text="<OD>", images=img, return_tensors="pt"
             ).to(DEVICE, dtype)
             with torch.no_grad():
                 gen_od = florence_model.generate(**inputs_od, max_new_tokens=256, do_sample=False)
             raw_od = florence_processor.tokenizer.decode(gen_od[0], skip_special_tokens=True)
+            
+            # Post-process OD to extract clean objects
+            try:
+                parsed_od = florence_processor.post_process_generation(
+                    raw_od, task="<OD>", image_size=img.size
+                )
+                if parsed_od and "<OD>" in parsed_od:
+                    od_data = parsed_od["<OD>"]
+                    for bbox, label in zip(od_data.get("bboxes", []), od_data.get("labels", [])):
+                        ymin, xmin, ymax, xmax = bbox
+                        norm_bbox = [
+                            int(ymin / img.size[1] * 1000),
+                            int(xmin / img.size[0] * 1000),
+                            int(ymax / img.size[1] * 1000),
+                            int(xmax / img.size[0] * 1000)
+                        ]
+                        cx = (xmin + xmax) / 2
+                        cy = (ymin + ymax) / 2
+                        grid_col = int(cx / img.size[0] * 24)
+                        grid_row = int(cy / img.size[1] * 12)
+                        objects.append({
+                            "type": label.replace(" ", "_"),
+                            "position": [grid_col, grid_row],
+                            "bbox": norm_bbox
+                        })
+                        visual_genre_evidence.append(label.lower())
+            except Exception as ode:
+                print(f"OD parsing note: {ode}")
+
         except Exception as e:
-            print(f"Florence-2 2-pass note: {e}")
+            print(f"Florence-2 pipeline exception: {e}")
+            vision_status = "unavailable"
 
-    try:
-        img_gray = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
-        if img_gray is None:
-            img_pil = Image.open(image_path).convert("L")
-            img_gray = np.array(img_pil)
+    # Infer scene attributes
+    cap_lower = raw_caption.lower()
+    if "forest" in cap_lower or "tree" in cap_lower or "outdoor" in cap_lower:
+        scene["environment"] = "forest"
+    elif "city" in cap_lower or "street" in cap_lower or "neon" in cap_lower or "highway" in cap_lower:
+        scene["environment"] = "city"
+    elif "dungeon" in cap_lower or "cave" in cap_lower or "stone" in cap_lower or "wall" in cap_lower:
+        scene["environment"] = "dungeon"
+    elif "space" in cap_lower or "star" in cap_lower or "nebula" in cap_lower:
+        scene["environment"] = "space"
+    elif "dojo" in cap_lower or "ring" in cap_lower or "arena" in cap_lower:
+        scene["environment"] = "arena"
 
-        h, w = img_gray.shape
-        grid_cols, grid_rows = 24, 12
-        cell_w, cell_h = w / grid_cols, h / grid_rows
+    if "behind" in cap_lower or "car" in cap_lower or "driving" in cap_lower:
+        scene["camera"] = "behind_car"
+    elif "top" in cap_lower or "dungeon" in cap_lower or "strategy" in cap_lower or "ortho" in cap_lower:
+        scene["camera"] = "top_down"
+    else:
+        scene["camera"] = "side_view"
 
-        _, thresh = cv2.threshold(img_gray, 200, 255, cv2.THRESH_BINARY_INV)
+    # Collect additional visual evidence from caption words
+    for word in cap_lower.split():
+        cleaned_word = "".join(c for c in word if c.isalnum())
+        if cleaned_word in ["car", "road", "track", "race", "fighter", "brawler", "chest", "treasure", "key", "sword", "tower", "castle", "runner", "lane", "spikes"]:
+            visual_genre_evidence.append(cleaned_word)
 
-        h_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (max(w // 30, 15), 2))
-        h_thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, h_kernel)
+    visual_genre_evidence = list(set(visual_genre_evidence))
 
-        platform_set = set()
-        for r in range(grid_rows):
-            for c in range(grid_cols):
-                x1, y1 = int(c * cell_w), int(r * cell_h)
-                x2, y2 = int((c + 1) * cell_w), int((r + 1) * cell_h)
-                
-                cell_full = thresh[y1:y2, x1:x2]
-                cell_h_layer = h_thresh[y1:y2, x1:x2]
-                
-                if np.mean(cell_full) > 6 or np.mean(cell_h_layer) > 2:
-                    platform_set.add((c, r))
+    # OpenCV Fallback Layout Extraction if AI Layout is missing or invalid
+    if layout is None:
+        try:
+            img_gray = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+            if img_gray is None:
+                img_pil = Image.open(image_path).convert("L")
+                img_gray = np.array(img_pil)
 
-        platforms = [list(p) for p in platform_set]
+            h, w = img_gray.shape
+            grid_cols, grid_rows = 24, 12
+            cell_w, cell_h = w / grid_cols, h / grid_rows
 
-        if len(platforms) > 5:
-            sorted_for_player = sorted(platforms, key=lambda p: (-p[1], p[0]))
-            player = [sorted_for_player[0][0], max(0, sorted_for_player[0][1] - 1)]
+            _, thresh = cv2.threshold(img_gray, 200, 255, cv2.THRESH_BINARY_INV)
+            h_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (max(w // 30, 15), 2))
+            h_thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, h_kernel)
 
-            sorted_for_goal = sorted(platforms, key=lambda p: (p[1], -p[0]))
-            goal = [sorted_for_goal[0][0], max(0, sorted_for_goal[0][1] - 1)]
+            platform_set = set()
+            for r in range(grid_rows):
+                for c in range(grid_cols):
+                    x1, y1 = int(c * cell_w), int(r * cell_h)
+                    x2, y2 = int((c + 1) * cell_w), int((r + 1) * cell_h)
+                    
+                    cell_full = thresh[y1:y2, x1:x2]
+                    cell_h_layer = h_thresh[y1:y2, x1:x2]
+                    
+                    if np.mean(cell_full) > 10 or np.mean(cell_h_layer) > 4:
+                        platform_set.add((c, r))
 
-            enemies = []
-            if len(sorted_for_player) > 10:
-                enemies = [
-                    sorted_for_player[len(sorted_for_player) // 3],
-                    sorted_for_player[2 * len(sorted_for_player) // 3]
-                ]
+            platforms = [list(p) for p in platform_set]
 
-            layout = {
-                "player": player,
-                "goal": goal,
-                "platforms": platforms,
-                "enemies": enemies
-            }
-            return layout, raw_caption, raw_od
-    except Exception as e:
-        print(f"Contour extraction note: {e}")
+            if len(platforms) > 5:
+                sorted_for_player = sorted(platforms, key=lambda p: (-p[1], p[0]))
+                player = [sorted_for_player[0][0], max(0, sorted_for_player[0][1] - 1)]
 
-    default_layout = {
-        "player": [1, 10],
-        "goal": [22, 3],
-        "platforms": [
-            [0, 11], [1, 11], [2, 11], [3, 11], [4, 11], [5, 11], [6, 11], [7, 11], [8, 11], [9, 11], [10, 11],
-            [3, 8], [4, 8], [5, 8],
-            [8, 6], [9, 6], [10, 6],
-            [14, 5], [15, 5], [16, 5],
-            [19, 4], [20, 4], [21, 4], [22, 4], [23, 4]
-        ],
-        "enemies": [[5, 7], [15, 4]]
+                sorted_for_goal = sorted(platforms, key=lambda p: (p[1], -p[0]))
+                goal = [sorted_for_goal[0][0], max(0, sorted_for_goal[0][1] - 1)]
+
+                enemies = []
+                if len(sorted_for_player) > 10:
+                    enemies = [
+                        sorted_for_player[len(sorted_for_player) // 3],
+                        sorted_for_player[2 * len(sorted_for_player) // 3]
+                    ]
+
+                layout = {
+                    "player": player,
+                    "goal": goal,
+                    "platforms": platforms,
+                    "enemies": enemies
+                }
+        except Exception as e:
+            print(f"Fallback layout extraction note: {e}")
+
+    if layout is None:
+        layout = {
+            "player": [1, 10],
+            "goal": [22, 3],
+            "platforms": [
+                [0, 11], [1, 11], [2, 11], [3, 11], [4, 11], [5, 11], [6, 11], [7, 11], [8, 11], [9, 11], [10, 11],
+                [3, 8], [4, 8], [5, 8],
+                [8, 6], [9, 6], [10, 6],
+                [14, 5], [15, 5], [16, 5],
+                [19, 4], [20, 4], [21, 4], [22, 4], [23, 4]
+            ],
+            "enemies": [[5, 7], [15, 4]]
+        }
+
+    # Populate object positions from extracted layout
+    if "player" in layout and not any(o["type"] == "player_character" for o in objects):
+        objects.append({"type": "player_character", "position": layout["player"], "bbox": [0,0,0,0]})
+    if "goal" in layout and not any(o["type"] == "goal_portal" for o in objects):
+        objects.append({"type": "goal_portal", "position": layout["goal"], "bbox": [0,0,0,0]})
+    for enemy in layout.get("enemies", []):
+        if not any(o["type"] == "enemy_patrol" and o["position"] == enemy for o in objects):
+            objects.append({"type": "enemy_patrol", "position": enemy, "bbox": [0,0,0,0]})
+
+    vision_info = {
+        "vision_status": vision_status,
+        "caption": raw_caption if vision_status == "available" else None,
+        "objects": objects,
+        "scene": scene,
+        "spatial_relations": ["player_near_ground", "enemy_facing_player"],
+        "visual_genre_evidence": visual_genre_evidence
     }
-    return default_layout, raw_caption, raw_od
 
-# --------------------------------------------------------------------------
-# Phase 3 - Open-Ended GPT-4o Genre-Aware Game Planner
-# --------------------------------------------------------------------------
+    return layout, raw_caption, raw_od, vision_info
+
+
+def resolve_genre(user_description, florence_caption, florence_od, layout, vision_info):
+    user_desc_lower = user_description.lower()
+    
+    # 1. User Intent Mapping
+    user_genre = None
+    reason = ""
+    source = "default"
+    confidence = 0.5
+    
+    genre_keywords = {
+        "racing": ["racing", "race", "car", "drive", "driving", "track", "vehicle"],
+        "fighting": ["fighting", "fight", "brawler", "combat", "arena", "beatemup", "beat 'em up"],
+        "adventure": ["adventure", "explore", "quest", "chest", "treasure", "forest", "rpg", "fantasy"],
+        "dungeon": ["dungeon", "crawler", "maze", "basement", "corridor"],
+        "strategy": ["strategy", "rts", "base", "units", "territory", "build"],
+        "platformer": ["platformer", "mario", "jumping", "jump", "megaman", "lode runner", "kid icarus", "rainbow islands"],
+        "running": ["running", "runner", "infinite run", "temple run", "subway surfers"],
+        "tower_defense": ["tower defense", "tower", "td", "defense"]
+    }
+    
+    for g, keywords in genre_keywords.items():
+        for kw in keywords:
+            if kw in user_desc_lower:
+                user_genre = g
+                reason = f"User explicitly requested a genre matching keyword '{kw}'."
+                source = "user_instruction"
+                confidence = 0.95
+                break
+        if user_genre:
+            break
+            
+    # 2. Visual Evidence Analysis
+    visual_evidence = vision_info.get("visual_genre_evidence", [])
+    visual_candidates = []
+    for g, keywords in genre_keywords.items():
+        score = 0.0
+        for kw in keywords:
+            if any(kw in ev.lower() for ev in visual_evidence):
+                score += 0.4
+            if florence_caption and kw in florence_caption.lower():
+                score += 0.3
+        if score > 0:
+            visual_candidates.append({"genre": g, "score": min(score, 1.0)})
+            
+    visual_candidates = sorted(visual_candidates, key=lambda x: x["score"], reverse=True)
+    vis_genre = visual_candidates[0]["genre"] if visual_candidates else None
+    vis_score = visual_candidates[0]["score"] if visual_candidates else 0.0
+    
+    # 3. Structural Heuristics
+    platforms = layout.get("platforms", [])
+    enemies = layout.get("enemies", [])
+    
+    if not platforms and len(enemies) > 2:
+        struct_genre = "running"
+    else:
+        struct_genre = "platformer"
+        
+    # Combine signals
+    resolved_genre = "platformer"
+    visual_conflict = False
+    
+    if user_genre:
+        resolved_genre = user_genre
+        if vis_genre and vis_genre != user_genre and vis_score > 0.6:
+            visual_conflict = True
+            reason += f" Note: Visual evidence suggests '{vis_genre}' (score {vis_score}), indicating a conflict with user request."
+    elif vis_genre and vis_score > 0.5:
+        resolved_genre = vis_genre
+        source = "visual_evidence"
+        confidence = 0.8
+        reason = f"Visual analysis detected strong evidence of '{vis_genre}' (score {vis_score})."
+    else:
+        resolved_genre = struct_genre or "platformer"
+        source = "structural_heuristics"
+        confidence = 0.6
+        reason = "No clear text or visual cues. Inferred from spatial coordinates layout."
+        
+    return {
+        "genre": resolved_genre,
+        "confidence": confidence,
+        "source": source,
+        "user_requested_genre": user_genre,
+        "visual_genre_candidates": visual_candidates,
+        "visual_conflict": visual_conflict,
+        "reason": reason
+    }
+
 
 GAME_PLAN_SYSTEM_PROMPT = """You are an expert AAA Game Designer, Technical Director, and AI Planning Engine.
 
-You receive four inputs:
-1. Grid layout coordinates for player, goal, platforms, and enemies.
-2. A detailed visual caption of the sketch image.
-3. A list of detected objects and regions from the sketch.
-4. A user theme description.
+You receive a resolved genre, visual scene understanding data, layout coordinates, and user requests.
+Your absolute first command is to obey the resolved genre. Do not change it.
 
-Your job is to infer the correct game genre entirely from these inputs — do not default to platformer. If the sketch shows a car or road, make a racing game. If it shows two figures facing each other, make a fighting game. If it shows a maze or top-down corridors, make a shooter or puzzle game. If it shows floating platforms and a stick figure, make a platformer. If it shows a knight, a dragon, or a castle — make an action/RPG game.
+Under the "genre_specific" field in the JSON output, you must provide genre-appropriate parameters:
+- For racing: {"track_type": "city circuit", "laps": 3, "boost": true, "opponents": 3, "checkpoints": 5}
+- For fighting: {"rounds": 3, "health": 100, "special_meter": 100, "arena_boundary": true}
+- For adventure: {"quests": 3, "npc_count": 2, "map_size": "medium", "keys_required": 1}
+- For dungeon: {"rooms": 4, "boss_health": 200, "keys": 2, "has_minimap": true}
+- For strategy: {"max_units": 50, "resource_types": ["gold", "wood"], "has_fog_of_war": true}
+- For platformer: {"jump_height": 3, "checkpoint_count": 2, "lives": 3}
+- For tower_defense: {"waves": 10, "tower_types": ["cannon", "slow", "rapid"], "enemy_path": true, "base_health": 20}
+- For running: {"lanes": 3, "initial_speed": 5, "multiplier": 1.1, "has_obstacles": true}
 
-GENRE-AWARE ASSET PROMPT INSTRUCTIONS:
-In the "assets" dictionary, you MUST write detailed 16-bit SNES arcade pixel art prompts using genre-appropriate asset concepts:
-- For Racing Games:
-  "player": "pixel_art, 16-bit pixel art red supercar sports car, sleek aerodynamic body, sharp dark pixel outline, detailed pixel shading, speed side-view, isolated on pure white background"
-  "enemy": "pixel_art, 16-bit pixel art blue rival racing car, sleek aerodynamic body, rear spoiler, sharp dark pixel outline, detailed pixel shading, speed side-view, isolated on pure white background"
-  "platform_tile": "pixel_art, 16-bit pixel art asphalt road tile, yellow dashed center lines, dark asphalt texture"
-  "background": "pixel_art, 16-bit pixel art night city highway background, neon city skyline, street lights"
-- For Fighting Games:
-  "player": "pixel_art, 16-bit pixel art martial artist hero in red gi, headband, boxing gloves, sharp dark pixel outline, isolated on pure white background"
-  "enemy": "pixel_art, 16-bit pixel art rival opponent fighter in cyber armor, sharp dark pixel outline, isolated on pure white background"
-- For Fantasy / Action RPG:
-  "player": "pixel_art, 16-bit pixel art knight hero in silver steel plate armor, visor helm with plume, blue cape, holding broadsword, sharp dark pixel outline, isolated on pure white background"
-  "enemy": "pixel_art, 16-bit pixel art ferocious green dragon, white horns, yellow underbelly scales, red glowing eye, sharp dark pixel outline, isolated on pure white background"
-
-Respond with ONLY valid JSON (no markdown, no backticks):
+Provide your response in raw JSON format (no markdown, no backticks):
 {
-  "genre": "Exact Inferred Genre",
+  "genre": "Exact Resolved Genre",
+  "genre_confidence": 0.0,
   "sketch_interpretation": "One clear sentence explaining what you understood the sketch to depict and why you chose this genre.",
+  "user_intent": "Summary of what the user requested",
   "camera": {
     "style": "Side Camera / Behind Car / Fixed Arena / Orthographic Top Down / Follow Camera",
     "fov": 60,
@@ -345,7 +524,7 @@ Respond with ONLY valid JSON (no markdown, no backticks):
     "health": 100,
     "lives": 3,
     "movement_style": "physics_driven",
-    "attack_key": "SPACE / J",
+    "attack_key": "SPACE / J / CLICK",
     "attack_action": "Sword Slash / Laser / Nitro Boost / Magic Spell / Stomp",
     "win_condition": "Clear win objective derived from genre",
     "lose_condition": "Lose condition derived from genre",
@@ -370,28 +549,33 @@ Respond with ONLY valid JSON (no markdown, no backticks):
     "goal_area": "Finish area"
   },
   "assets": {
-    "player": "pixel_art, 16-bit pixel art hero asset description",
-    "enemy": "pixel_art, 16-bit pixel art opponent asset description",
-    "platform_tile": "pixel_art, 16-bit pixel art tileable surface description",
-    "background": "pixel_art, 16-bit pixel art background environment description"
+    "player": "detailed 16-bit SNES arcade pixel art prompt",
+    "enemy": "detailed 16-bit SNES arcade pixel art prompt",
+    "platform_tile": "detailed 16-bit SNES arcade pixel art prompt",
+    "background": "detailed 16-bit SNES arcade pixel art prompt"
   },
-  "video_prompt": "pixel_art, 16-bit pixel art game footage...",
+  "video_prompt": "detailed 16-bit game video preview description",
   "asset_metadata": [
     { "name": "player", "category": "character/hero", "collision": "solid", "gameplay": "user_controlled" },
-    { "name": "enemy", "category": "hazard/opponent", "collision": "trigger_damage", "gameplay": "patrol_ai" },
-    { "name": "platform_tile", "category": "environment", "collision": "solid", "gameplay": "walkable_ground" }
+    { "name": "enemy", "category": "hazard/opponent", "collision": "trigger_damage", "gameplay": "patrol_ai" }
   ],
   "difficulty": "medium",
-  "enemy_count": 3
+  "enemy_count": 3,
+  "genre_specific": {}
 }"""
 
 
-def plan_game(layout_json, user_description="A fun game", florence_caption="", florence_od=""):
+def plan_game(layout_json, user_description, florence_caption, florence_od, genre_resolution, vision_info):
     user_msg = (
-        f"Game layout:\n{json.dumps(layout_json, indent=2)}\n\n"
-        f"Sketch Visual Caption: {florence_caption}\n"
-        f"Detected Regions/Objects: {florence_od}\n"
-        f"Theme description: {user_description}"
+        f"USER REQUEST / THEME:\n{user_description}\n\n"
+        f"RESOLVED GENRE:\n{genre_resolution['genre']}\n\n"
+        f"GENRE CONFIDENCE:\n{genre_resolution['confidence']}\n\n"
+        f"SKETCH CAPTION:\n{florence_caption}\n\n"
+        f"DETECTED OBJECTS:\n{json.dumps(vision_info.get('objects', []), indent=2)}\n\n"
+        f"SCENE:\n{json.dumps(vision_info.get('scene', {}), indent=2)}\n\n"
+        f"SPATIAL RELATIONS:\n{json.dumps(vision_info.get('spatial_relations', []), indent=2)}\n\n"
+        f"LAYOUT:\n{json.dumps(layout_json, indent=2)}\n\n"
+        f"VISUAL GENRE EVIDENCE:\n{json.dumps(genre_resolution.get('visual_genre_candidates', []), indent=2)}"
     )
     client = get_openai_client()
     response = client.chat.completions.create(
@@ -409,6 +593,9 @@ def plan_game(layout_json, user_description="A fun game", florence_caption="", f
         plan = json.loads(raw)
         if "sketch_interpretation" not in plan or not plan["sketch_interpretation"]:
             plan["sketch_interpretation"] = f"The sketch was interpreted as a {plan.get('genre', 'action')} scene based on visual layout and drawing patterns."
+        # Ensure exact resolved genre is kept
+        plan["genre"] = genre_resolution["genre"]
+        plan["genre_confidence"] = genre_resolution["confidence"]
         return plan
     except json.JSONDecodeError:
         print(f"GPT-4o returned invalid JSON:\n{raw[:500]}")
@@ -1163,152 +1350,277 @@ def _draw_shooter_hud(draw, canvas_width, canvas_height):
     draw.text((px1 + 10, py1 + 35), "AMMO 24/120", fill=(255, 215, 0, 255))
 
 
+def render_racing(best_assets, layout_json, game_plan, tile_size, canvas_width, canvas_height, include_sprites):
+    bg = best_assets.get("background")
+    if bg:
+        canvas = bg.resize((canvas_width, canvas_height), Image.LANCZOS).convert("RGBA")
+    else:
+        canvas = draw_parallax_sky(canvas_width, canvas_height, game_plan)
+    draw = ImageDraw.Draw(canvas)
+
+    # Draw race track lines perspective
+    draw.polygon([(canvas_width // 2 - 40, canvas_height // 2), (canvas_width // 2 + 40, canvas_height // 2), (canvas_width, canvas_height), (0, canvas_height)], fill=(40, 40, 45, 255))
+    draw.line([canvas_width // 2, canvas_height // 2, canvas_width // 2, canvas_height], fill=(255, 215, 0, 255), width=4)
+
+    if include_sprites:
+        player_sprite = best_assets.get("player")
+        if player_sprite:
+            car = remove_flat_background(player_sprite).resize((180, 90), Image.NEAREST).convert("RGBA")
+            canvas.paste(car, (int(canvas_width * 0.15), int(canvas_height * 0.72)), car)
+        
+        enemy_sprite = best_assets.get("enemy")
+        if enemy_sprite:
+            enemy_car = remove_flat_background(enemy_sprite).resize((120, 60), Image.NEAREST).convert("RGBA")
+            canvas.paste(enemy_car, (int(canvas_width * 0.55), int(canvas_height * 0.58)), enemy_car)
+
+    _draw_racing_hud(draw, canvas_width, canvas_height)
+    return canvas.convert("RGB")
+
+def render_fighting(best_assets, layout_json, game_plan, tile_size, canvas_width, canvas_height, include_sprites):
+    bg = best_assets.get("background")
+    if bg:
+        canvas = bg.resize((canvas_width, canvas_height), Image.LANCZOS).convert("RGBA")
+    else:
+        canvas = draw_parallax_sky(canvas_width, canvas_height, game_plan)
+    draw = ImageDraw.Draw(canvas)
+
+    if include_sprites:
+        player_sprite = best_assets.get("player")
+        if player_sprite:
+            p1 = remove_flat_background(player_sprite).resize((150, 150), Image.NEAREST).convert("RGBA")
+            canvas.paste(p1, (int(canvas_width * 0.18), int(canvas_height * 0.44)), p1)
+
+        enemy_sprite = best_assets.get("enemy")
+        if enemy_sprite:
+            p2 = remove_flat_background(enemy_sprite).resize((150, 150), Image.NEAREST).convert("RGBA")
+            p2 = p2.transpose(Image.FLIP_LEFT_RIGHT)
+            canvas.paste(p2, (int(canvas_width * 0.66), int(canvas_height * 0.44)), p2)
+
+    _draw_fighting_hud(draw, canvas_width, canvas_height, game_plan, p1_hp=100, p2_hp=100)
+    return canvas.convert("RGB")
+
+def render_adventure(best_assets, layout_json, game_plan, tile_size, canvas_width, canvas_height, include_sprites):
+    bg = best_assets.get("background")
+    if bg:
+        canvas = bg.resize((canvas_width, canvas_height), Image.LANCZOS).convert("RGBA")
+    else:
+        canvas = draw_parallax_sky(canvas_width, canvas_height, game_plan)
+    draw = ImageDraw.Draw(canvas)
+
+    # Draw walking path
+    draw.rectangle([0, int(canvas_height * 0.72), canvas_width, canvas_height], fill=(120, 85, 45, 255))
+    draw.rectangle([0, int(canvas_height * 0.72), canvas_width, int(canvas_height * 0.74)], fill=(160, 120, 70, 255))
+
+    if include_sprites:
+        player_sprite = best_assets.get("player")
+        if player_sprite:
+            p1 = remove_flat_background(player_sprite).resize((120, 120), Image.NEAREST).convert("RGBA")
+            canvas.paste(p1, (int(canvas_width * 0.15), int(canvas_height * 0.50)), p1)
+
+        enemy_sprite = best_assets.get("enemy")
+        if enemy_sprite:
+            chest = remove_flat_background(enemy_sprite).resize((90, 90), Image.NEAREST).convert("RGBA")
+            canvas.paste(chest, (int(canvas_width * 0.70), int(canvas_height * 0.58)), chest)
+
+    # Draw adventure HUD
+    draw.rectangle([10, 10, 260, 55], fill=(30, 30, 40, 220), outline=(218, 165, 32, 255), width=2)
+    draw.text((20, 16), "QUEST: FIND THE MYSTIC KEY", fill=(255, 215, 0, 255))
+    draw.text((20, 32), "INVENTORY: [ ] KEY  [ ] MAP", fill=(200, 200, 200, 255))
+    return canvas.convert("RGB")
+
+def render_dungeon(best_assets, layout_json, game_plan, tile_size, canvas_width, canvas_height, include_sprites):
+    canvas = Image.new("RGBA", (canvas_width, canvas_height), (20, 15, 15, 255))
+    draw = ImageDraw.Draw(canvas)
+
+    # Draw grid floor tiles
+    for x in range(0, canvas_width, 48):
+        for y in range(0, canvas_height, 48):
+            draw.rectangle([x, y, x + 46, y + 46], fill=(40, 35, 35, 255), outline=(50, 45, 45, 255))
+
+    # Outer wall border
+    draw.rectangle([0, 0, canvas_width, 24], fill=(20, 20, 20, 255))
+    draw.rectangle([0, canvas_height-24, canvas_width, canvas_height], fill=(20, 20, 20, 255))
+
+    if include_sprites:
+        player_sprite = best_assets.get("player")
+        if player_sprite:
+            p1 = remove_flat_background(player_sprite).resize((90, 90), Image.NEAREST).convert("RGBA")
+            canvas.paste(p1, (100, canvas_height // 2 - 45), p1)
+
+        enemy_sprite = best_assets.get("enemy")
+        if enemy_sprite:
+            es = remove_flat_background(enemy_sprite).resize((90, 90), Image.NEAREST).convert("RGBA")
+            canvas.paste(es, (canvas_width - 200, canvas_height // 2 - 45), es)
+
+    # Dungeon HUD
+    draw.rectangle([10, 10, 220, 50], fill=(15, 10, 10, 230), outline=(255, 50, 50, 255), width=2)
+    draw.text((20, 16), "DUNGEON LEVEL 1", fill=(255, 50, 50, 255))
+    draw.text((20, 30), "HP: 100/100  KEYS: 0", fill=(255, 255, 255, 255))
+    return canvas.convert("RGB")
+
+def render_strategy(best_assets, layout_json, game_plan, tile_size, canvas_width, canvas_height, include_sprites):
+    canvas = Image.new("RGBA", (canvas_width, canvas_height), (35, 55, 35, 255))
+    draw = ImageDraw.Draw(canvas)
+
+    # Draw grid terrain
+    for x in range(0, canvas_width, 64):
+        for y in range(0, canvas_height, 64):
+            draw.rectangle([x, y, x + 62, y + 62], fill=(40, 65, 40, 255))
+
+    if include_sprites:
+        player_sprite = best_assets.get("player")
+        if player_sprite:
+            base1 = remove_flat_background(player_sprite).resize((110, 110), Image.NEAREST).convert("RGBA")
+            canvas.paste(base1, (80, canvas_height // 2 - 55), base1)
+
+        enemy_sprite = best_assets.get("enemy")
+        if enemy_sprite:
+            base2 = remove_flat_background(enemy_sprite).resize((110, 110), Image.NEAREST).convert("RGBA")
+            canvas.paste(base2, (canvas_width - 200, canvas_height // 2 - 55), base2)
+
+    # Strategy HUD
+    draw.rectangle([0, canvas_height - 40, canvas_width, canvas_height], fill=(20, 20, 30, 255))
+    draw.text((20, canvas_height - 30), "GOLD: 750   WOOD: 400   UNITS: 15/50", fill=(255, 215, 0, 255))
+    return canvas.convert("RGB")
+
+def render_platformer(best_assets, layout_json, game_plan, tile_size, canvas_width, canvas_height, include_sprites):
+    bg = best_assets.get("background")
+    if bg:
+        canvas = bg.resize((canvas_width, canvas_height), Image.LANCZOS).convert("RGBA")
+    else:
+        canvas = draw_parallax_sky(canvas_width, canvas_height, game_plan)
+    draw = ImageDraw.Draw(canvas)
+
+    platforms = layout_json.get("platforms", [])
+    if not platforms:
+        return canvas.convert("RGB")
+
+    all_x = [p[0] for p in platforms]
+    all_y = [p[1] for p in platforms]
+    min_x, max_x = min(all_x), max(all_x)
+    min_y, max_y = min(all_y), max(all_y)
+    grid_w, grid_h = max_x - min_x + 1, max_y - min_y + 1
+
+    scale = min(canvas_width / (grid_w * tile_size), canvas_height / (grid_h * tile_size), 1.0)
+    ts = max(int(tile_size * scale), 6)
+
+    platform_tile = best_assets.get("platform_tile")
+    if platform_tile:
+        platform_tile = platform_tile.resize((ts, ts), Image.NEAREST).convert("RGBA")
+
+    for px_grid, py_grid in platforms:
+        screen_x = int((px_grid - min_x) * ts)
+        screen_y = int((py_grid - min_y) * ts)
+        if platform_tile and 0 <= screen_x < canvas_width and 0 <= screen_y < canvas_height:
+            canvas.paste(platform_tile, (screen_x, screen_y), platform_tile)
+
+    if include_sprites:
+        player_pos = layout_json.get("player", [0, 0])
+        player_sprite = best_assets.get("player")
+        if player_sprite:
+            ps = remove_flat_background(player_sprite).resize((ts * 2, ts * 2), Image.NEAREST).convert("RGBA")
+            px_screen = int((player_pos[0] - min_x) * ts)
+            py_screen = int((player_pos[1] - min_y) * ts) - ts
+            canvas.paste(ps, (px_screen, py_screen), ps)
+
+        enemies = layout_json.get("enemies", [])
+        enemy_sprite = best_assets.get("enemy")
+        if enemy_sprite and enemies:
+            es = remove_flat_background(enemy_sprite).resize((ts * 2, ts * 2), Image.NEAREST).convert("RGBA")
+            for ex, ey in enemies[:10]:
+                ex_screen = int((ex - min_x) * ts)
+                ey_screen = int((ey - min_y) * ts) - ts
+                canvas.paste(es, (ex_screen, ey_screen), es)
+
+    goal_pos = layout_json.get("goal", [0, 0])
+    gx = int((goal_pos[0] - min_x) * ts)
+    gy = int((goal_pos[1] - min_y) * ts) - ts
+    draw.rectangle([gx, gy, gx + 6, gy + ts * 2], fill=(255, 215, 0, 255))
+    draw.polygon([(gx + 6, gy), (gx + ts * 2, gy + int(ts * 0.6)), (gx + 6, gy + int(ts * 1.2))], fill=(255, 40, 40, 255))
+
+    # Platformer HUD
+    draw.rectangle([10, 10, 180, 45], fill=(0, 0, 0, 180))
+    draw.text((20, 15), "SCORE: 00450   LIVES: 3", fill=(255, 255, 255, 255))
+    return canvas.convert("RGB")
+
+def render_tower_defense(best_assets, layout_json, game_plan, tile_size, canvas_width, canvas_height, include_sprites):
+    canvas = Image.new("RGBA", (canvas_width, canvas_height), (35, 30, 25, 255))
+    draw = ImageDraw.Draw(canvas)
+
+    # Draw path
+    path_pts = [(0, 240), (200, 240), (200, 100), (450, 100), (450, 360), (700, 360), (700, 240), (canvas_width, 240)]
+    for i in range(len(path_pts)-1):
+        draw.line([path_pts[i], path_pts[i+1]], fill=(120, 110, 100, 255), width=48)
+        draw.line([path_pts[i], path_pts[i+1]], fill=(160, 150, 140, 255), width=40)
+
+    if include_sprites:
+        player_sprite = best_assets.get("player")
+        if player_sprite:
+            tower = remove_flat_background(player_sprite).resize((70, 70), Image.NEAREST).convert("RGBA")
+            canvas.paste(tower, (100, 110), tower)
+            canvas.paste(tower, (320, 170), tower)
+            canvas.paste(tower, (600, 280), tower)
+
+        enemy_sprite = best_assets.get("enemy")
+        if enemy_sprite:
+            minion = remove_flat_background(enemy_sprite).resize((50, 50), Image.NEAREST).convert("RGBA")
+            canvas.paste(minion, (200, 160), minion)
+            canvas.paste(minion, (450, 240), minion)
+
+    # TD HUD
+    draw.rectangle([10, 10, 200, 50], fill=(20, 20, 20, 220), outline=(0, 200, 255, 255), width=2)
+    draw.text((20, 16), "WAVE: 3/10", fill=(0, 200, 255, 255))
+    draw.text((20, 30), "HEALTH: 20  GOLD: 250", fill=(255, 255, 255, 255))
+    return canvas.convert("RGB")
+
+def render_running(best_assets, layout_json, game_plan, tile_size, canvas_width, canvas_height, include_sprites):
+    bg = best_assets.get("background")
+    if bg:
+        canvas = bg.resize((canvas_width, canvas_height), Image.LANCZOS).convert("RGBA")
+    else:
+        canvas = draw_parallax_sky(canvas_width, canvas_height, game_plan)
+    draw = ImageDraw.Draw(canvas)
+
+    # Draw lanes
+    draw.line([0, 160, canvas_width, 160], fill=(255, 255, 255, 100), width=3)
+    draw.line([0, 280, canvas_width, 280], fill=(255, 255, 255, 100), width=3)
+
+    if include_sprites:
+        player_sprite = best_assets.get("player")
+        if player_sprite:
+            runner = remove_flat_background(player_sprite).resize((110, 110), Image.NEAREST).convert("RGBA")
+            canvas.paste(runner, (80, 180), runner)
+
+        enemy_sprite = best_assets.get("enemy")
+        if enemy_sprite:
+            obstacle = remove_flat_background(enemy_sprite).resize((70, 70), Image.NEAREST).convert("RGBA")
+            canvas.paste(obstacle, (400, 200), obstacle)
+            canvas.paste(obstacle, (700, 80), obstacle)
+
+    # Runner HUD
+    draw.rectangle([10, 10, 220, 45], fill=(10, 10, 10, 200))
+    draw.text((20, 16), "DISTANCE: 0340m  x1.2", fill=(0, 255, 100, 255))
+    return canvas.convert("RGB")
+
 def compose_scene(best_assets, layout_json, game_plan, tile_size=32, canvas_width=1024, canvas_height=480, include_sprites=True):
     genre_lower = (game_plan.get("genre", "") if game_plan else "").lower()
-    theme_lower = (game_plan.get("theme", "") if game_plan else "").lower()
-    camera_style = (game_plan.get("camera", {}).get("style", "") if game_plan else "").lower()
-
-    is_fighting = "fight" in genre_lower or "arena" in genre_lower or "beat" in genre_lower or "brawl" in genre_lower or "fixed" in camera_style
-    is_racing = "car" in genre_lower or "rac" in genre_lower or "vehicle" in genre_lower or "speed" in genre_lower or "behind" in camera_style or "chase" in camera_style
-    is_shooter = "shoot" in genre_lower or "top down" in genre_lower or "bullet" in genre_lower or "gun" in genre_lower or "top" in camera_style or "ortho" in camera_style
-    is_puzzle = "puzzl" in genre_lower or "maze" in genre_lower or "logic" in genre_lower
-
-    if is_fighting:
-        bg = best_assets.get("background")
-        if bg:
-            canvas = bg.resize((canvas_width, canvas_height), Image.LANCZOS).convert("RGBA")
-        else:
-            canvas = draw_parallax_sky(canvas_width, canvas_height, game_plan)
-        draw = ImageDraw.Draw(canvas)
-
-        if include_sprites:
-            player_sprite = best_assets.get("player")
-            if player_sprite:
-                p1 = remove_flat_background(player_sprite).resize((150, 150), Image.NEAREST).convert("RGBA")
-                canvas.paste(p1, (int(canvas_width * 0.18), int(canvas_height * 0.44)), p1)
-
-            enemy_sprite = best_assets.get("enemy")
-            if enemy_sprite:
-                p2 = remove_flat_background(enemy_sprite).resize((150, 150), Image.NEAREST).convert("RGBA")
-                p2 = p2.transpose(Image.FLIP_LEFT_RIGHT)
-                canvas.paste(p2, (int(canvas_width * 0.66), int(canvas_height * 0.44)), p2)
-
-        _draw_fighting_hud(draw, canvas_width, canvas_height, game_plan, p1_hp=100, p2_hp=100)
-        return canvas.convert("RGB")
-
-    elif is_racing:
-        bg = best_assets.get("background")
-        if bg:
-            canvas = bg.resize((canvas_width, canvas_height), Image.LANCZOS).convert("RGBA")
-        else:
-            canvas = draw_parallax_sky(canvas_width, canvas_height, game_plan)
-        draw = ImageDraw.Draw(canvas)
-
-        if include_sprites:
-            player_sprite = best_assets.get("player")
-            if player_sprite:
-                car = remove_flat_background(player_sprite).resize((180, 90), Image.NEAREST).convert("RGBA")
-                canvas.paste(car, (int(canvas_width * 0.15), int(canvas_height * 0.72)), car)
-
-        fx = int(canvas_width * 0.85)
-        fy = int(canvas_height * 0.55)
-        draw.rectangle([fx, fy, fx + 8, int(canvas_height * 0.85)], fill=(240, 240, 240, 255))
-        for r in range(4):
-            for c in range(4):
-                col = (0, 0, 0, 255) if (r + c) % 2 == 0 else (255, 255, 255, 255)
-                draw.rectangle([fx + 8 + c * 10, fy + r * 10, fx + 18 + c * 10, fy + 10 + r * 10], fill=col)
-
-        _draw_racing_hud(draw, canvas_width, canvas_height)
-        return canvas.convert("RGB")
-
-    elif is_shooter or is_puzzle:
-        canvas = Image.new("RGBA", (canvas_width, canvas_height), (15, 20, 30, 255))
-        draw = ImageDraw.Draw(canvas)
-
-        for gx in range(0, canvas_width, 48):
-            for gy in range(0, canvas_height, 48):
-                c_val = 30 if ((gx // 48 + gy // 48) % 2 == 0) else 40
-                draw.rectangle([gx, gy, gx + 46, gy + 46], fill=(c_val, c_val + 5, c_val + 15, 255))
-
-        draw.rectangle([0, 0, canvas_width, 24], fill=(80, 90, 110, 255))
-        draw.rectangle([0, canvas_height - 24, canvas_width, canvas_height], fill=(80, 90, 110, 255))
-        draw.rectangle([0, 0, 24, canvas_height], fill=(80, 90, 110, 255))
-        draw.rectangle([canvas_width - 24, 0, canvas_width, canvas_height], fill=(80, 90, 110, 255))
-
-        if include_sprites:
-            player_sprite = best_assets.get("player")
-            if player_sprite:
-                ps = remove_flat_background(player_sprite).resize((80, 80), Image.NEAREST).convert("RGBA")
-                canvas.paste(ps, (120, canvas_height // 2 - 40), ps)
-
-            enemy_sprite = best_assets.get("enemy")
-            if enemy_sprite:
-                es = remove_flat_background(enemy_sprite).resize((80, 80), Image.NEAREST).convert("RGBA")
-                canvas.paste(es, (canvas_width - 220, canvas_height // 2 - 40), es)
-
-        draw.ellipse([canvas_width - 210, canvas_height // 2 - 30, canvas_width - 150, canvas_height // 2 + 30], outline=(255, 50, 50, 255), width=3)
-        draw.line([canvas_width - 180, canvas_height // 2 - 40, canvas_width - 180, canvas_height // 2 + 40], fill=(255, 50, 50, 255), width=2)
-        draw.line([canvas_width - 220, canvas_height // 2, canvas_width - 140, canvas_height // 2], fill=(255, 50, 50, 255), width=2)
-
-        _draw_shooter_hud(draw, canvas_width, canvas_height)
-        return canvas.convert("RGB")
-
+    
+    if "rac" in genre_lower:
+        return render_racing(best_assets, layout_json, game_plan, tile_size, canvas_width, canvas_height, include_sprites)
+    elif "fight" in genre_lower:
+        return render_fighting(best_assets, layout_json, game_plan, tile_size, canvas_width, canvas_height, include_sprites)
+    elif "adventure" in genre_lower:
+        return render_adventure(best_assets, layout_json, game_plan, tile_size, canvas_width, canvas_height, include_sprites)
+    elif "dungeon" in genre_lower:
+        return render_dungeon(best_assets, layout_json, game_plan, tile_size, canvas_width, canvas_height, include_sprites)
+    elif "strategy" in genre_lower:
+        return render_strategy(best_assets, layout_json, game_plan, tile_size, canvas_width, canvas_height, include_sprites)
+    elif "tower" in genre_lower or "td" in genre_lower:
+        return render_tower_defense(best_assets, layout_json, game_plan, tile_size, canvas_width, canvas_height, include_sprites)
+    elif "run" in genre_lower:
+        return render_running(best_assets, layout_json, game_plan, tile_size, canvas_width, canvas_height, include_sprites)
     else:
-        bg = best_assets.get("background")
-        if bg:
-            canvas = bg.resize((canvas_width, canvas_height), Image.LANCZOS).convert("RGBA")
-        else:
-            canvas = draw_parallax_sky(canvas_width, canvas_height, game_plan)
-
-        platforms = layout_json.get("platforms", [])
-        if not platforms:
-            return canvas.convert("RGB")
-
-        all_x = [p[0] for p in platforms]
-        all_y = [p[1] for p in platforms]
-        min_x, max_x = min(all_x), max(all_x)
-        min_y, max_y = min(all_y), max(all_y)
-        grid_w, grid_h = max_x - min_x + 1, max_y - min_y + 1
-
-        scale = min(canvas_width / (grid_w * tile_size), canvas_height / (grid_h * tile_size), 1.0)
-        ts = max(int(tile_size * scale), 6)
-
-        platform_tile = best_assets.get("platform_tile")
-        if platform_tile:
-            platform_tile = platform_tile.resize((ts, ts), Image.NEAREST).convert("RGBA")
-
-        for px_grid, py_grid in platforms:
-            screen_x = int((px_grid - min_x) * ts)
-            screen_y = int((py_grid - min_y) * ts)
-            if platform_tile and 0 <= screen_x < canvas_width and 0 <= screen_y < canvas_height:
-                canvas.paste(platform_tile, (screen_x, screen_y), platform_tile)
-
-        if include_sprites:
-            player_pos = layout_json.get("player", [0, 0])
-            player_sprite = best_assets.get("player")
-            if player_sprite:
-                ps = remove_flat_background(player_sprite).resize((ts * 2, ts * 2), Image.NEAREST).convert("RGBA")
-                px_screen = int((player_pos[0] - min_x) * ts)
-                py_screen = int((player_pos[1] - min_y) * ts) - ts
-                canvas.paste(ps, (px_screen, py_screen), ps)
-
-            enemies = layout_json.get("enemies", [])
-            enemy_sprite = best_assets.get("enemy")
-            if enemy_sprite and enemies:
-                es = remove_flat_background(enemy_sprite).resize((ts * 2, ts * 2), Image.NEAREST).convert("RGBA")
-                for ex, ey in enemies[:10]:
-                    ex_screen = int((ex - min_x) * ts)
-                    ey_screen = int((ey - min_y) * ts) - ts
-                    canvas.paste(es, (ex_screen, ey_screen), es)
-
-        goal_pos = layout_json.get("goal", [0, 0])
-        gx = int((goal_pos[0] - min_x) * ts)
-        gy = int((goal_pos[1] - min_y) * ts) - ts
-        draw = ImageDraw.Draw(canvas)
-        draw.rectangle([gx, gy, gx + 6, gy + ts * 2], fill=(255, 215, 0, 255))
-        draw.polygon([(gx + 6, gy), (gx + ts * 2, gy + int(ts * 0.6)), (gx + 6, gy + int(ts * 1.2))], fill=(255, 40, 40, 255))
-
-        return canvas.convert("RGB")
+        return render_platformer(best_assets, layout_json, game_plan, tile_size, canvas_width, canvas_height, include_sprites)
 
 def validate_playability(layout_json, max_jump_height=4, max_jump_width=5):
     platforms = set(tuple(p) for p in layout_json.get("platforms", []))
@@ -1420,12 +1732,14 @@ def generate_preview_video(scene, layout_json, path, best_assets, output_path, f
     genre_lower = (game_plan.get("genre", "") if game_plan else "").lower()
     theme_lower = (game_plan.get("theme", "") if game_plan else "").lower()
 
-    is_fighting = "fight" in genre_lower or "arena" in genre_lower or "beat" in genre_lower or "brawl" in genre_lower or "fight" in theme_lower
-    is_racing = "car" in genre_lower or "rac" in genre_lower or "vehicle" in genre_lower or "speed" in genre_lower or "car" in theme_lower or "racer" in theme_lower
-    is_shooter = "shoot" in genre_lower or "top down" in genre_lower or "bullet" in genre_lower or "gun" in genre_lower or "laser" in theme_lower
+    is_racing = "rac" in genre_lower
+    is_fighting = "fight" in genre_lower
+    is_adventure = "adventure" in genre_lower
+    is_dungeon = "dungeon" in genre_lower
+    is_strategy = "strategy" in genre_lower
+    is_tower_defense = "tower" in genre_lower or "td" in genre_lower
+    is_running = "run" in genre_lower
 
-    # Reuse the already-composed scene to avoid a second compose_scene() RAM spike.
-    # Pre-scale to viewport size BEFORE the frame loop so base_img.copy() is cheap (640x368 not 2048x1024).
     vp_w, vp_h = 640, 368
     base_img = scene.convert("RGBA").resize((vp_w, vp_h), Image.BILINEAR)
     w, h = vp_w, vp_h
@@ -1536,7 +1850,7 @@ def generate_preview_video(scene, layout_json, path, best_assets, output_path, f
         player_sprite = best_assets.get("player")
         enemy_sprite = best_assets.get("enemy")
         car_p1 = remove_flat_background(player_sprite).resize((180, 90), Image.NEAREST).convert("RGBA") if player_sprite else None
-        car_p2 = remove_flat_background(enemy_sprite).resize((180, 90), Image.NEAREST).convert("RGBA") if enemy_sprite else None
+        car_p2 = remove_flat_background(enemy_sprite).resize((120, 60), Image.NEAREST).convert("RGBA") if enemy_sprite else None
 
         for i in range(total_frames):
             bg_asset = best_assets.get("background")
@@ -1546,18 +1860,18 @@ def generate_preview_video(scene, layout_json, path, best_assets, output_path, f
                 frame_img = draw_parallax_sky(w, h, game_plan).convert("RGBA")
             draw = ImageDraw.Draw(frame_img)
 
+            # Draw race track lines perspective
+            draw.polygon([(w // 2 - 25, h // 2), (w // 2 + 25, h // 2), (w, h), (0, h)], fill=(40, 40, 45, 255))
+            draw.line([w // 2, h // 2, w // 2, h], fill=(255, 215, 0, 255), width=2)
+
             progress = i / float(total_frames)
-            p1_x = int(w * 0.08 + progress * (w * 0.65))
-            p2_x = int(w * 0.25 + progress * (w * 0.35))
-            p1_y = int(h * 0.76)
-            p2_y = int(h * 0.70)
+            p1_x = int(w * 0.08 + progress * (w * 0.55))
+            p2_x = int(w * 0.45 + progress * (w * 0.20))
+            p1_y = int(h * 0.72)
+            p2_y = int(h * 0.58)
 
-            if car_p2:
+            if car_p2 and progress < 0.9:
                 frame_img.paste(car_p2, (p2_x, p2_y), car_p2)
-
-            if 0.3 < progress < 0.85:
-                draw.polygon([(p1_x - 30, p1_y + 35), (p1_x - 5, p1_y + 40), (p1_x - 30, p1_y + 45)], fill=(0, 240, 255, 255))
-                draw.polygon([(p1_x - 50, p1_y + 30), (p1_x - 15, p1_y + 40), (p1_x - 50, p1_y + 50)], fill=(255, 140, 0, 200))
 
             if car_p1:
                 frame_img.paste(car_p1, (p1_x, p1_y), car_p1)
@@ -1568,6 +1882,229 @@ def generate_preview_video(scene, layout_json, path, best_assets, output_path, f
                 draw.rectangle([w // 2 - 140, 80, w // 2 + 140, 140], fill=(10, 20, 30, 230))
                 draw.rectangle([w // 2 - 140, 80, w // 2 + 140, 140], outline=(0, 255, 200, 255), width=3)
                 draw.text((w // 2 - 100, 98), "FINISH! 1ST PLACE", fill=(0, 255, 240, 255))
+
+            if writer:
+                writer.append_data(np.array(frame_img.convert("RGB")))
+            del frame_img
+            if i % 10 == 0: gc.collect()
+
+    elif is_adventure:
+        total_frames = 150
+        player_sprite = best_assets.get("player")
+        enemy_sprite = best_assets.get("enemy")
+        p_img = remove_flat_background(player_sprite).resize((120, 120), Image.NEAREST).convert("RGBA") if player_sprite else None
+        chest_img = remove_flat_background(enemy_sprite).resize((90, 90), Image.NEAREST).convert("RGBA") if enemy_sprite else None
+
+        bg_asset = best_assets.get("background")
+        if bg_asset:
+            clean_bg = bg_asset.resize((w, h), Image.LANCZOS).convert("RGBA")
+        else:
+            clean_bg = draw_parallax_sky(w, h, game_plan).convert("RGBA")
+
+        for i in range(total_frames):
+            frame_img = clean_bg.copy()
+            draw = ImageDraw.Draw(frame_img)
+            draw.rectangle([0, int(h * 0.72), w, h], fill=(120, 85, 45, 255))
+            draw.rectangle([0, int(h * 0.72), w, int(h * 0.74)], fill=(160, 120, 70, 255))
+
+            progress = i / float(total_frames)
+            px = int(w * 0.15 + progress * (w * 0.45))
+            py = int(h * 0.50)
+
+            if chest_img and progress < 0.85:
+                frame_img.paste(chest_img, (int(w * 0.70), int(h * 0.58)), chest_img)
+
+            if p_img:
+                frame_img.paste(p_img, (px, py), p_img)
+
+            if progress >= 0.85:
+                ky = int(h * 0.55 - (progress - 0.85) * 200)
+                draw.rectangle([int(w * 0.75), ky, int(w * 0.75) + 12, ky + 6], fill=(255, 215, 0, 255))
+                draw.ellipse([int(w * 0.75) - 6, ky - 4, int(w * 0.75) + 2, ky + 10], fill=(255, 215, 0, 255))
+
+            # HUD
+            draw.rectangle([10, 10, 260, 55], fill=(30, 30, 40, 220), outline=(218, 165, 32, 255), width=2)
+            draw.text((20, 16), "QUEST: FIND THE MYSTIC KEY", fill=(255, 215, 0, 255))
+            draw.text((20, 32), f"INVENTORY: [{'KEY' if progress >= 0.85 else ' '}] KEY  [ ] MAP", fill=(200, 200, 200, 255))
+
+            if writer:
+                writer.append_data(np.array(frame_img.convert("RGB")))
+            del frame_img
+            if i % 10 == 0: gc.collect()
+
+    elif is_dungeon:
+        total_frames = 150
+        player_sprite = best_assets.get("player")
+        enemy_sprite = best_assets.get("enemy")
+        p_img = remove_flat_background(player_sprite).resize((90, 90), Image.NEAREST).convert("RGBA") if player_sprite else None
+        e_img = remove_flat_background(enemy_sprite).resize((90, 90), Image.NEAREST).convert("RGBA") if enemy_sprite else None
+
+        for i in range(total_frames):
+            frame_img = Image.new("RGBA", (w, h), (20, 15, 15, 255))
+            draw = ImageDraw.Draw(frame_img)
+            for gx in range(0, w, 48):
+                for gy in range(0, h, 48):
+                    draw.rectangle([gx, gy, gx + 46, gy + 46], fill=(40, 35, 35, 255), outline=(50, 45, 45, 255))
+            draw.rectangle([0, 0, w, 24], fill=(20, 20, 20, 255))
+            draw.rectangle([0, h-24, w, h], fill=(20, 20, 20, 255))
+
+            progress = i / float(total_frames)
+            px = int(w * 0.15 + progress * (w * 0.50))
+            py = h // 2 - 45
+
+            if e_img and progress < 0.80:
+                frame_img.paste(e_img, (w - 200, h // 2 - 45), e_img)
+
+            if p_img:
+                frame_img.paste(p_img, (px, py), p_img)
+
+            if 0.75 <= progress <= 0.85:
+                hx = w - 180
+                hy = h // 2
+                draw.polygon([(hx, hy-25), (hx+12, hy-8), (hx+28, hy-18), (hx+15, hy), (hx+30, hy+15), (hx+8, hy+8), (hx, hy+30), (hx-8, hy+8), (hx-25, hy+15), (hx-12, hy)], fill=(255, 230, 40, 255))
+
+            # HUD
+            draw.rectangle([10, 10, 220, 50], fill=(15, 10, 10, 230), outline=(255, 50, 50, 255), width=2)
+            draw.text((20, 16), "DUNGEON LEVEL 1", fill=(255, 50, 50, 255))
+            draw.text((20, 30), f"HP: 100/100  KEYS: {1 if progress >= 0.85 else 0}", fill=(255, 255, 255, 255))
+
+            if writer:
+                writer.append_data(np.array(frame_img.convert("RGB")))
+            del frame_img
+            if i % 10 == 0: gc.collect()
+
+    elif is_strategy:
+        total_frames = 150
+        player_sprite = best_assets.get("player")
+        enemy_sprite = best_assets.get("enemy")
+        base1 = remove_flat_background(player_sprite).resize((110, 110), Image.NEAREST).convert("RGBA") if player_sprite else None
+        base2 = remove_flat_background(enemy_sprite).resize((110, 110), Image.NEAREST).convert("RGBA") if enemy_sprite else None
+
+        for i in range(total_frames):
+            frame_img = Image.new("RGBA", (w, h), (35, 55, 35, 255))
+            draw = ImageDraw.Draw(frame_img)
+            for gx in range(0, w, 64):
+                for gy in range(0, h, 64):
+                    draw.rectangle([gx, gy, gx + 62, gy + 62], fill=(40, 65, 40, 255))
+
+            if base1: frame_img.paste(base1, (80, h // 2 - 55), base1)
+            if base2: frame_img.paste(base2, (w - 200, h // 2 - 55), base2)
+
+            progress = i / float(total_frames)
+            draw.rectangle([w // 2 - 15, h // 2 - 15, w // 2 + 15, h // 2 + 15], fill=(0, 200, 255, 255))
+
+            ux = int(190 + progress * (w // 2 - 205))
+            uy = h // 2
+            draw.ellipse([ux-8, uy-8, ux+8, uy+8], fill=(255, 50, 50, 255))
+
+            # HUD
+            draw.rectangle([0, h - 40, w, h], fill=(20, 20, 30, 255))
+            gold = int(750 + progress * 200)
+            draw.text((20, h - 30), f"GOLD: {gold}   WOOD: 400   UNITS: 15/50", fill=(255, 215, 0, 255))
+
+            if writer:
+                writer.append_data(np.array(frame_img.convert("RGB")))
+            del frame_img
+            if i % 10 == 0: gc.collect()
+
+    elif is_tower_defense:
+        total_frames = 150
+        player_sprite = best_assets.get("player")
+        enemy_sprite = best_assets.get("enemy")
+        tower = remove_flat_background(player_sprite).resize((70, 70), Image.NEAREST).convert("RGBA") if player_sprite else None
+        minion = remove_flat_background(enemy_sprite).resize((50, 50), Image.NEAREST).convert("RGBA") if enemy_sprite else None
+
+        for i in range(total_frames):
+            frame_img = Image.new("RGBA", (w, h), (35, 30, 25, 255))
+            draw = ImageDraw.Draw(frame_img)
+            path_pts = [(0, 180), (140, 180), (140, 80), (320, 80), (320, 280), (480, 280), (480, 180), (w, 180)]
+            for p_idx in range(len(path_pts)-1):
+                draw.line([path_pts[p_idx], path_pts[p_idx+1]], fill=(120, 110, 100, 255), width=32)
+                draw.line([path_pts[p_idx], path_pts[p_idx+1]], fill=(160, 150, 140, 255), width=24)
+
+            if tower:
+                frame_img.paste(tower, (80, 70), tower)
+                frame_img.paste(tower, (240, 120), tower)
+
+            progress = i / float(total_frames)
+            if progress < 0.33:
+                seg_prog = progress / 0.33
+                ex = int(0 + seg_prog * 140)
+                ey = 180
+            elif progress < 0.66:
+                seg_prog = (progress - 0.33) / 0.33
+                ex = 140
+                ey = int(180 - seg_prog * 100)
+            else:
+                seg_prog = (progress - 0.66) / 0.34
+                ex = int(140 + seg_prog * 180)
+                ey = 80
+
+            if minion:
+                frame_img.paste(minion, (ex-25, ey-25), minion)
+
+            if 0.2 < progress < 0.8:
+                draw.line([115, 105, ex, ey], fill=(255, 50, 50, 255), width=3)
+                draw.ellipse([ex-6, ey-6, ex+6, ey+6], fill=(255, 255, 100, 255))
+
+            # HUD
+            draw.rectangle([10, 10, 200, 50], fill=(20, 20, 20, 220), outline=(0, 200, 255, 255), width=2)
+            draw.text((20, 16), "WAVE: 3/10", fill=(0, 200, 255, 255))
+            gold = int(250 + progress * 50)
+            draw.text((20, 30), f"HEALTH: 20  GOLD: {gold}", fill=(255, 255, 255, 255))
+
+            if writer:
+                writer.append_data(np.array(frame_img.convert("RGB")))
+            del frame_img
+            if i % 10 == 0: gc.collect()
+
+    elif is_running:
+        total_frames = 150
+        player_sprite = best_assets.get("player")
+        enemy_sprite = best_assets.get("enemy")
+        runner = remove_flat_background(player_sprite).resize((110, 110), Image.NEAREST).convert("RGBA") if player_sprite else None
+        obstacle = remove_flat_background(enemy_sprite).resize((70, 70), Image.NEAREST).convert("RGBA") if enemy_sprite else None
+
+        bg_asset = best_assets.get("background")
+        if bg_asset:
+            clean_bg = bg_asset.resize((w, h), Image.LANCZOS).convert("RGBA")
+        else:
+            clean_bg = draw_parallax_sky(w, h, game_plan).convert("RGBA")
+
+        for i in range(total_frames):
+            frame_img = clean_bg.copy()
+            draw = ImageDraw.Draw(frame_img)
+            
+            offset = (i * 12) % 60
+            for lx in range(-60 + offset, w + 60, 60):
+                draw.line([lx, 160, lx + 30, 160], fill=(255, 255, 255, 120), width=3)
+                draw.line([lx, 280, lx + 30, 280], fill=(255, 255, 255, 120), width=3)
+
+            progress = i / float(total_frames)
+            
+            if progress < 0.3:
+                ry = 180
+            elif progress < 0.6:
+                t = (progress - 0.3) / 0.3
+                ry = int(180 - t * 120)
+            elif progress < 0.8:
+                ry = 60
+            else:
+                t = (progress - 0.8) / 0.2
+                ry = int(60 + t * 120)
+
+            ox = int(w * 1.1 - progress * (w * 1.3))
+
+            if obstacle:
+                frame_img.paste(obstacle, (ox, 180), obstacle)
+
+            if runner:
+                frame_img.paste(runner, (80, ry), runner)
+
+            # HUD
+            draw.rectangle([10, 10, 220, 45], fill=(10, 10, 10, 200))
+            dist = int(progress * 500)
+            draw.text((20, 16), f"DISTANCE: {dist:04}m  x1.2", fill=(0, 255, 100, 255))
 
             if writer:
                 writer.append_data(np.array(frame_img.convert("RGB")))
@@ -1613,7 +2150,6 @@ def generate_preview_video(scene, layout_json, path, best_assets, output_path, f
 
             py_scr -= jump_offset
 
-            # Clamp coordinates so player stays safely within background canvas
             px_scr = max(0, min(w - sprite_w, px_scr))
             py_scr = max(0, min(h - sprite_h, py_scr))
 
@@ -1628,11 +2164,6 @@ def generate_preview_video(scene, layout_json, path, best_assets, output_path, f
                     ey_scr = max(0, min(h - sprite_h, ey_scr))
                     frame_img.paste(e_img, (ex_scr, ey_scr), e_img)
 
-            # Smoothly center camera viewport on player position
-            cam_x = max(0, min(max(0, w - vp_w), px_scr + sprite_w // 2 - vp_w // 2))
-            cam_y = max(0, min(max(0, h - vp_h), py_scr + sprite_h // 2 - vp_h // 2))
-
-            # Since base_img is already at viewport size, no crop needed
             if writer:
                 writer.append_data(np.array(frame_img.convert("RGB")))
             del frame_img
@@ -1648,23 +2179,43 @@ def generate_preview_video(scene, layout_json, path, best_assets, output_path, f
 # Pipeline Execution Endpoint Engine
 # --------------------------------------------------------------------------
 
-def run_full_pipeline(image_path, user_description="A fun game", job_id=None, base_url="http://localhost:7860"):
+def run_full_pipeline(image_path, user_description="Create a game based on the provided sketch.", job_id=None, base_url="http://localhost:7860"):
     job_dir = os.path.join(API_OUTPUT_DIR, job_id) if job_id else os.path.join(API_OUTPUT_DIR, str(uuid.uuid4())[:8])
     os.makedirs(job_dir, exist_ok=True)
 
     set_job_status(job_id, "Analyzing level sketch with Florence-2 & Vision...", 10, "Extracting layout grid, caption, and object detections")
-    if DEVICE == "cuda":
-        try:
-            ensure_florence_loaded()
-        except Exception as e:
-            print(f"Florence load note: {e}")
-    layout, florence_caption, florence_od = sketch_to_layout(image_path)
+    
+    # Check model loading availability and load Florence-2
+    vision_loaded = False
+    try:
+        ensure_florence_loaded()
+        vision_loaded = (florence_model is not None)
+    except Exception as e:
+        print(f"Florence load note: {e}")
+        
+    layout, florence_caption, florence_od, vision_info = sketch_to_layout(image_path)
 
-    set_job_status(job_id, "Generating AAA game plan with GPT-4o...", 25, f"Caption: '{florence_caption[:40]}...'")
-    game_plan = plan_game(layout, user_description, florence_caption, florence_od)
+    # Dedicated Genre Resolution Stage
+    set_job_status(job_id, "Resolving game genre...", 18, "Analyzing user intent and visual layout evidence")
+    genre_resolution = resolve_genre(user_description, florence_caption, florence_od, layout, vision_info)
+
+    # Save vision, genre_resolution, and layout debug JSONs
+    with open(os.path.join(job_dir, "vision.json"), "w") as f:
+        json.dump(vision_info, f, indent=2)
+    with open(os.path.join(job_dir, "genre_resolution.json"), "w") as f:
+        json.dump(genre_resolution, f, indent=2)
+    with open(os.path.join(job_dir, "layout.json"), "w") as f:
+        json.dump(layout, f, indent=2)
+
+    set_job_status(job_id, "Generating AAA game plan with GPT-4o...", 25, f"Caption: '{florence_caption[:40] if florence_caption else 'None'}...'")
+    game_plan = plan_game(layout, user_description, florence_caption, florence_od, genre_resolution, vision_info)
     if not game_plan:
         set_job_status(job_id, "Failed", 0, error="GPT-4o planning failed")
         return {"error": "Failed to generate game plan from sketch"}
+
+    # Save game plan debug JSON
+    with open(os.path.join(job_dir, "game_plan.json"), "w") as f:
+        json.dump(game_plan, f, indent=2)
 
     all_candidates = generate_all_assets(game_plan, job_dir, job_id=job_id)
 
@@ -1707,11 +2258,16 @@ def run_full_pipeline(image_path, user_description="A fun game", job_id=None, ba
     ts = str(uuid.uuid4())[:6]
     result = {
         "job_id": job_id,
+        "user_description": user_description,
+        "vision_analysis": vision_info,
+        "detected_objects": vision_info.get("objects", []),
+        "resolved_genre": genre_resolution,
+        "confidence": genre_resolution.get("confidence", 1.0),
         "game_plan": game_plan,
         "layout": layout,
+        "playability": playability_info,
         "florence_caption": florence_caption,
         "florence_od": florence_od,
-        "playability": playability_info,
         "urls": {
             "scene": f"/files/{job_id}/scene.png?v={ts}",
             "preview": f"/files/{job_id}/preview.mp4?v={ts}",
@@ -1753,7 +2309,7 @@ def root():
 @app.post("/generate")
 async def generate_endpoint(
     sketch: UploadFile = File(...),
-    description: str = Form("A fun platformer game"),
+    description: str = Form("Create a game based on the provided sketch."),
     job_id: str = Form(None)
 ):
     if not job_id:

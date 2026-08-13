@@ -43,6 +43,31 @@ STYLE_BLOCKS = {
         "hand-placed pixels, sharp clean pixel lines, pastel geometric color palette, "
         "isolated on solid white background, game-ready puzzle asset"
     ),
+    "adventure": (
+        f"{LORA_TRIGGER}, 16-bit pixel art adventure sprite, Legend of Zelda and Chrono Trigger style, "
+        "hand-placed pixels, sharp dark pixel outline, rich organic colors, "
+        "isolated on solid white background, game-ready RPG sprite"
+    ),
+    "dungeon": (
+        f"{LORA_TRIGGER}, 16-bit pixel art top-down dungeon crawler sprite, Rogue and Binding of Isaac style, "
+        "hand-placed pixels, high contrast dark outlines, detailed brick and tile patterns, "
+        "isolated on solid white background, game-ready dungeon sprite"
+    ),
+    "strategy": (
+        f"{LORA_TRIGGER}, 16-bit pixel art real-time strategy building or unit, Starcraft and Dune II style, "
+        "hand-placed pixels, clean mechanical shading, high visibility team color details, "
+        "isolated on solid white background, game-ready strategy asset"
+    ),
+    "tower_defense": (
+        f"{LORA_TRIGGER}, 16-bit pixel art defense tower turret, Kingdom Rush and Bloons style, "
+        "hand-placed pixels, sturdy stone and wooden textures, distinct turret nozzle, "
+        "isolated on solid white background, game-ready tower asset"
+    ),
+    "running": (
+        f"{LORA_TRIGGER}, 16-bit pixel art running game obstacle or runner, Subway Surfers and Jetpack Joyride style, "
+        "hand-placed pixels, action-ready motion lines, bright high-visibility colors, "
+        "isolated on solid white background, game-ready runner asset"
+    ),
     "default": (
         f"{LORA_TRIGGER}, 16-bit pixel art SNES arcade sprite, retro game asset, "
         "hand-placed pixels, sharp dark pixel outline, detailed pixel shading, "
@@ -69,6 +94,16 @@ def get_style_block(genre=""):
         return STYLE_BLOCKS["shooter"]
     elif "puzzl" in genre_lower or "maze" in genre_lower or "logic" in genre_lower or "iso" in genre_lower:
         return STYLE_BLOCKS["puzzle"]
+    elif "adventure" in genre_lower or "rpg" in genre_lower or "quest" in genre_lower:
+        return STYLE_BLOCKS["adventure"]
+    elif "dungeon" in genre_lower or "crawler" in genre_lower:
+        return STYLE_BLOCKS["dungeon"]
+    elif "strategy" in genre_lower or "rts" in genre_lower or "unit" in genre_lower or "base" in genre_lower:
+        return STYLE_BLOCKS["strategy"]
+    elif "tower" in genre_lower or "td" in genre_lower or "defense" in genre_lower:
+        return STYLE_BLOCKS["tower_defense"]
+    elif "run" in genre_lower or "runner" in genre_lower:
+        return STYLE_BLOCKS["running"]
     return STYLE_BLOCKS["default"]
 
 # Master Negative Prompt Block
