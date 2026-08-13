@@ -124,10 +124,14 @@ def ensure_florence_loaded():
 
     print("Loading Florence-2...")
     florence_processor = AutoProcessor.from_pretrained(MODEL_ID, trust_remote_code=True)
+    # Load in bfloat16 to halve memory usage on CPU (critical for 512MB Render limit)
+    # low_cpu_mem_usage prevents RAM spiking during initialization
+    dtype = torch.float16 if DEVICE == "cuda" else torch.bfloat16
     florence_base = AutoModelForCausalLM.from_pretrained(
         MODEL_ID, trust_remote_code=True,
-        torch_dtype=torch.float16 if DEVICE == "cuda" else torch.float32,
+        torch_dtype=dtype,
         device_map=DEVICE,
+        low_cpu_mem_usage=True
     )
     if os.path.exists(FLORENCE_LORA_PATH) and len(os.listdir(FLORENCE_LORA_PATH)) > 0:
         print(f"Loading fine-tuned Florence-2 LoRA from {FLORENCE_LORA_PATH}...")
