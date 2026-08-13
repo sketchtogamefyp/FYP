@@ -203,6 +203,34 @@ def ensure_clip_loaded():
 # Phase 2 - Sketch -> Layout JSON & Rich Visual Analysis (2-Pass Florence-2)
 # --------------------------------------------------------------------------
 
+def free_model_memory(target="all"):
+    global florence_model, florence_base, florence_processor
+    global sdxl_pipe
+    global clip_model, clip_preprocess, clip_tokenizer
+    import gc
+    import torch
+
+    print(f"Aggressively freeing memory for target: {target}...")
+
+    if target in ["all", "florence"]:
+        florence_model = None
+        florence_base = None
+        florence_processor = None
+        
+    if target in ["all", "sdxl"]:
+        sdxl_pipe = None
+        
+    if target in ["all", "clip"]:
+        clip_model = None
+        clip_preprocess = None
+        clip_tokenizer = None
+
+    gc.collect()
+    if DEVICE == "cuda" and torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    print("Memory cleanup complete.")
+
+
 def sketch_to_layout(image_path):
     raw_caption = "A hand-drawn game level sketch"
     raw_od = ""
@@ -2515,6 +2543,10 @@ def run_full_pipeline(image_path, user_description="Create a game based on the p
         
     layout, florence_caption, florence_od, vision_info = sketch_to_layout(image_path)
 
+    # FREE FLORENCE IMMEDIATELY to prevent OOM on 512MB RAM servers
+    free_model_memory('florence')
+
+
     # Dedicated Genre Resolution Stage
     set_job_status(job_id, "Resolving game genre...", 18, "Analyzing user intent and visual layout evidence")
     genre_resolution = resolve_genre(user_description, florence_caption, florence_od, layout, vision_info)
@@ -2544,6 +2576,10 @@ def run_full_pipeline(image_path, user_description="Create a game based on the p
 
     for asset_name, img in best_assets.items():
         img.save(os.path.join(job_dir, f"best_{asset_name}.png"))
+
+    # FREE ALL REMAINING MODELS (SDXL, CLIP) to save memory for Video rendering
+    free_model_memory('all')
+
 
     set_job_status(job_id, "Validating level playability...", 92, "Running BFS pathfinding")
     playable, path, playability_info = validate_playability(layout)
