@@ -2335,10 +2335,10 @@ def generate_preview_video(bg_img, layout, path, assets, output_path, game_plan=
 
     gif_path = output_path.replace(".mp4", ".gif")
     
-    import cv2
+    import imageio
     try:
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        writer = cv2.VideoWriter(output_path, fourcc, 15.0, (W, H))
+        # Stream directly to MP4 using imageio-ffmpeg (H.264) to bypass browser incompatibility and RAM OOM
+        writer = imageio.get_writer(output_path, fps=15, macro_block_size=None)
         
         TOTAL_FRAMES = 150  # 10 seconds at 15 fps
         
@@ -2528,23 +2528,20 @@ def generate_preview_video(bg_img, layout, path, assets, output_path, game_plan=
                 draw.text((20, 20), f"SCORE: {int(i*15.5)}", fill=(255,255,255,255))
                 draw.text((20, 40), f"WORLD: 1-1", fill=(255,255,255,255))
             
-            # Write frame directly to disk via OpenCV, ZERO list memory overhead
-            import cv2
-            frame_cv2 = cv2.cvtColor(np.array(frame), cv2.COLOR_RGB2BGR)
-            writer.write(frame_cv2)
+            # Write frame directly to disk via imageio-ffmpeg, ZERO list memory overhead
+            writer.append_data(np.array(frame))
             
             del frame
             del draw
-            del frame_cv2
             if i % 10 == 0:
                 gc.collect()
                 
-        writer.release()
+        writer.close()
         
     except Exception as e:
         print(f"Error generating advanced video: {e}")
         if 'writer' in locals() and writer:
-            writer.release()
+            writer.close()
             
     # Final cleanup
     del base_bg
