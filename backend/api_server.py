@@ -498,32 +498,52 @@ def resolve_genre(user_description, florence_caption, florence_od, layout, visio
     source = "default"
     confidence = 0.5
     
-    genre_keywords = {
-        "racing": ["racing", "race", "car", "drive", "driving", "track", "vehicle"],
-        "fighting": ["fighting", "fight", "brawler", "combat", "arena", "beatemup", "beat 'em up"],
-        "adventure": ["adventure", "explore", "quest", "chest", "treasure", "forest", "rpg", "fantasy"],
-        "dungeon": ["dungeon", "crawler", "maze", "basement", "corridor"],
-        "strategy": ["strategy", "rts", "base", "units", "territory", "build"],
-        "platformer": ["platformer", "mario", "jumping", "jump", "megaman", "lode runner", "kid icarus", "rainbow islands"],
-        "running": ["running", "runner", "infinite run", "temple run", "subway surfers"],
-        "tower_defense": ["tower defense", "tower", "td", "defense"]
-    }
+    # Check hybrids first to prevent partial matching (e.g. "adventure fighting")
+    if "adventure fighting" in user_desc_lower or "action adventure" in user_desc_lower or "hack and slash" in user_desc_lower:
+        user_genre = "fighting" # Use fighting mechanics in an adventure setting
+        reason = "User requested a hybrid 'adventure fighting' genre; prioritizing combat mechanics."
+        source = "user_instruction"
+        confidence = 0.99
     
-    for g, keywords in genre_keywords.items():
-        for kw in keywords:
-            if kw in user_desc_lower:
-                user_genre = g
-                reason = f"User explicitly requested a genre matching keyword '{kw}'."
-                source = "user_instruction"
-                confidence = 0.95
+    if not user_genre:
+        genre_keywords = {
+            "racing": ["racing", "race", "car", "drive", "driving", "track", "vehicle", "kart"],
+            "fighting": ["fighting", "fight", "brawler", "combat", "arena", "beatemup", "beat 'em up", "smash"],
+            "dungeon": ["dungeon", "crawler", "maze", "basement", "corridor", "roguelike"],
+            "strategy": ["strategy", "rts", "base", "units", "territory", "build", "tactics"],
+            "platformer": ["platformer", "mario", "jumping", "jump", "megaman", "sonic", "platform"],
+            "tower_defense": ["tower defense", "tower", "td", "defense"],
+            "running": ["running", "runner", "infinite run", "temple run", "subway surfers", "endless runner"],
+            "adventure": ["adventure", "explore", "quest", "chest", "treasure", "forest", "rpg", "fantasy", "zelda"]
+        }
+        
+        for g, keywords in genre_keywords.items():
+            for kw in keywords:
+                if kw in user_desc_lower:
+                    user_genre = g
+                    reason = f"User explicitly requested a genre matching keyword '{kw}'."
+                    source = "user_instruction"
+                    confidence = 0.95
+                    break
+            if user_genre:
                 break
-        if user_genre:
-            break
             
     # 2. Visual Evidence Analysis
     visual_evidence = vision_info.get("visual_genre_evidence", [])
     visual_candidates = []
-    for g, keywords in genre_keywords.items():
+    # Using the same mapping for visual checking
+    genre_keywords_vis = {
+        "racing": ["racing", "race", "car", "drive", "driving", "track", "vehicle"],
+        "fighting": ["fighting", "fight", "brawler", "combat", "arena", "beatemup", "beat 'em up"],
+        "dungeon": ["dungeon", "crawler", "maze", "basement", "corridor"],
+        "strategy": ["strategy", "rts", "base", "units", "territory", "build"],
+        "platformer": ["platformer", "mario", "jumping", "jump"],
+        "tower_defense": ["tower defense", "tower", "td", "defense"],
+        "running": ["running", "runner", "infinite run"],
+        "adventure": ["adventure", "explore", "quest", "chest", "treasure", "forest", "rpg", "fantasy"]
+    }
+    
+    for g, keywords in genre_keywords_vis.items():
         score = 0.0
         for kw in keywords:
             if any(kw in ev.lower() for ev in visual_evidence):
@@ -575,6 +595,7 @@ def resolve_genre(user_description, florence_caption, florence_od, layout, visio
         "visual_conflict": visual_conflict,
         "reason": reason
     }
+
 
 
 GAME_PLAN_SYSTEM_PROMPT = """You are an expert AAA Game Designer, Technical Director, and AI Planning Engine.
@@ -2289,307 +2310,206 @@ def _try_init_video_writer(output_path, fps=20):
         return None, None
 
 
-def generate_preview_video(scene, layout_json, path, best_assets, output_path,
-                           fps=20, tile_size=32, game_plan=None):
-    """Generate a short animated preview video (MP4 or GIF fallback)."""
+def generate_preview_video(bg_img, layout, path, assets, output_path, game_plan=None):
+    """
+    Renders gameplay preview video based on resolved genre with actual mechanics.
+    Strictly manages memory to stay under 512MB RAM constraints on Render.
+    """
     import imageio
     import gc
+    from PIL import ImageDraw
 
-    genre_lower = (game_plan.get("genre", "") if game_plan else "").lower()
+    # 1. Enforce memory constraints: reduce resolution and frame count
+    W, H = 640, 360
+    base_bg = bg_img.resize((W, H), Image.LANCZOS)
+    
+    genre = game_plan.get("genre", "platformer").lower() if game_plan else "platformer"
+    
+    player_img = assets.get("player")
+    if player_img:
+        player_img = player_img.resize((int(W*0.08), int(H*0.12)), Image.LANCZOS)
+    
+    enemy_img = assets.get("enemy")
+    if enemy_img:
+        enemy_img = enemy_img.resize((int(W*0.08), int(H*0.12)), Image.LANCZOS)
+        
+    item_img = assets.get("item")
+    if item_img:
+        item_img = item_img.resize((int(W*0.05), int(H*0.08)), Image.LANCZOS)
 
-    is_racing    = "rac" in genre_lower
-    is_fighting  = "fight" in genre_lower or "arena" in genre_lower
-    is_strategy  = "strategy" in genre_lower
-    is_tower     = "tower" in genre_lower or "defense" in genre_lower
-    is_running   = "run" in genre_lower
+    frames = []
+    
+    # 2. Logic loops by genre
+    
+    if genre == "racing":
+        # Simulate road scrolling and dodging
+        car_y = int(H * 0.7)
+        for i in range(100):
+            frame = base_bg.copy()
+            draw = ImageDraw.Draw(frame)
+            
+            # Scrolling road lines
+            offset = (i * 10) % H
+            for y_line in range(0, H, int(H*0.2)):
+                draw.rectangle([W//2 - 5, (y_line + offset) % H, W//2 + 5, ((y_line + offset) % H) + int(H*0.1)], fill=(255, 255, 255, 200))
+                
+            # Player car moving side to side
+            import math
+            car_x = int(W * 0.5 + math.sin(i * 0.1) * (W * 0.2))
+            
+            if enemy_img: # Rival car
+                rival_y = int((i * 8) % H)
+                rival_x = int(W * 0.4)
+                frame.paste(enemy_img, (rival_x, rival_y), enemy_img if enemy_img.mode == 'RGBA' else None)
+                
+            if player_img:
+                frame.paste(player_img, (car_x - player_img.width//2, car_y), player_img if player_img.mode == 'RGBA' else None)
+                
+            frames.append(frame)
+            if i % 10 == 0: gc.collect()
+            
+    elif genre == "fighting":
+        # Simulate combat: approach, attack, hit spark
+        for i in range(100):
+            frame = base_bg.copy()
+            draw = ImageDraw.Draw(frame)
+            
+            p_x = int(W * 0.2)
+            e_x = int(W * 0.8)
+            y = int(H * 0.6)
+            
+            if i < 30: # Approach
+                p_x += i * 2
+                e_x -= i * 2
+            elif i < 60: # Attack phase
+                p_x = int(W * 0.2) + 60
+                e_x = int(W * 0.8) - 60
+                if i % 10 < 5: # Punch animation
+                    p_x += 20
+                if i == 50 or i == 55: # Hit spark
+                    draw.ellipse([e_x-20, y-20, e_x+20, y+20], fill=(255,255,0,255))
+            else: # Knockback
+                p_x = int(W * 0.2) + 60
+                e_x = int(W * 0.8) - 60 + (i - 60) * 3
+                
+            if player_img: frame.paste(player_img, (p_x, y), player_img if player_img.mode == 'RGBA' else None)
+            if enemy_img: frame.paste(enemy_img, (e_x, y), enemy_img if enemy_img.mode == 'RGBA' else None)
+                
+            frames.append(frame)
+            if i % 10 == 0: gc.collect()
+            
+    elif genre == "tower_defense":
+        # Simulate static tower shooting projectiles at creeping enemies
+        tower_x, tower_y = int(W * 0.5), int(H * 0.4)
+        for i in range(100):
+            frame = base_bg.copy()
+            draw = ImageDraw.Draw(frame)
+            
+            if player_img: # Tower
+                frame.paste(player_img, (tower_x, tower_y), player_img if player_img.mode == 'RGBA' else None)
+                
+            # Creep walking path
+            creep_x = int(i * (W / 100.0))
+            creep_y = int(H * 0.7)
+            if enemy_img:
+                frame.paste(enemy_img, (creep_x, creep_y), enemy_img if enemy_img.mode == 'RGBA' else None)
+                
+            # Projectiles
+            if i % 20 > 5:
+                proj_x = tower_x + int(((i % 20) / 15.0) * (creep_x - tower_x))
+                proj_y = tower_y + int(((i % 20) / 15.0) * (creep_y - tower_y))
+                draw.ellipse([proj_x-5, proj_y-5, proj_x+5, proj_y+5], fill=(255, 50, 50, 255))
+                
+            frames.append(frame)
+            if i % 10 == 0: gc.collect()
+            
+    elif genre == "strategy":
+        # Simulate units moving across a map
+        for i in range(100):
+            frame = base_bg.copy()
+            
+            # Base (Enemy)
+            if enemy_img:
+                frame.paste(enemy_img, (int(W*0.8), int(H*0.2)), enemy_img if enemy_img.mode == 'RGBA' else None)
+                
+            # Units (Player)
+            if player_img:
+                unit = player_img.resize((int(player_img.width*0.5), int(player_img.height*0.5)), Image.LANCZOS)
+                for u in range(3):
+                    u_x = int(W*0.1) + int((i * 3) % (W*0.7)) - (u * 30)
+                    u_y = int(H*0.5) + (u * 20)
+                    if u_x > 0:
+                        frame.paste(unit, (u_x, u_y), unit if unit.mode == 'RGBA' else None)
+                        
+            frames.append(frame)
+            if i % 10 == 0: gc.collect()
+            
+    elif genre == "running":
+        # Simulate endless runner (player stays left, obstacles move right to left)
+        for i in range(100):
+            frame = base_bg.copy()
+            import math
+            
+            # Player jump
+            jump_offset = max(0, math.sin(i * 0.15) * 50) if i % 40 < 20 else 0
+            p_y = int(H * 0.7) - int(jump_offset)
+            if player_img:
+                frame.paste(player_img, (int(W * 0.2), p_y), player_img if player_img.mode == 'RGBA' else None)
+                
+            # Obstacle
+            o_x = W - int((i * 8) % W)
+            if enemy_img:
+                frame.paste(enemy_img, (o_x, int(H * 0.7)), enemy_img if enemy_img.mode == 'RGBA' else None)
+                
+            frames.append(frame)
+            if i % 10 == 0: gc.collect()
 
-    # Use a smaller canvas to prevent OOM on limited RAM servers
-    vp_w, vp_h = 640, 360
-    base_img = scene.convert("RGBA").resize((vp_w, vp_h), Image.BILINEAR)
-    w, h = vp_w, vp_h
+    else:
+        # Default Platformer / Adventure / Dungeon / Mario mechanics
+        # Simulate horizontal movement and parabolic jumping
+        import math
+        for i in range(100):
+            frame = base_bg.copy()
+            
+            # Parabolic jump mapping
+            x_progress = i / 100.0
+            p_x = int(x_progress * W * 0.8) + int(W * 0.1)
+            
+            # Jump twice in 100 frames
+            jump_cycle = (i % 50) / 50.0
+            p_y = int(H * 0.6) - int(math.sin(jump_cycle * math.pi) * (H * 0.25))
+            
+            if player_img:
+                frame.paste(player_img, (p_x, p_y), player_img if player_img.mode == 'RGBA' else None)
+                
+            if enemy_img:
+                e_x = int(W * 0.7) + int(math.sin(i * 0.1) * 30)
+                frame.paste(enemy_img, (e_x, int(H * 0.6)), enemy_img if enemy_img.mode == 'RGBA' else None)
+                
+            if item_img:
+                frame.paste(item_img, (int(W * 0.5), int(H * 0.4)), item_img if item_img.mode == 'RGBA' else None)
+                
+            frames.append(frame)
+            if i % 10 == 0: gc.collect()
 
-    writer, video_mode = _try_init_video_writer(output_path, fps=fps)
-    # For GIF, halve framerate to reduce file size
-    gif_every = 2 if video_mode == "gif" else 1
-
-    def _write_frame(frame_img, frame_idx):
-        """Safely append a frame, converting to RGB if needed."""
-        if writer is None:
-            return
-        try:
-            if frame_idx % gif_every != 0:
-                return
-            rgb = frame_img.convert("RGB")
-            writer.append_data(np.array(rgb))
-        except Exception as fe:
-            print(f"[Video] Frame {frame_idx} write error: {fe}")
-
+    # 3. Save as GIF to bypass ffmpeg requirements on Render, keeping memory low
     try:
-        if is_fighting:
-            # ── Fighting: choreographed 2-character battle ──────────────────
-            total_frames = 120
-            p1_base_x = int(w * 0.18)
-            p2_base_x = int(w * 0.58)
-            y_ground   = int(h * 0.44)
-
-            bg = best_assets.get("background")
-            clean_bg = bg.resize((w, h), Image.LANCZOS).convert("RGBA") if bg else base_img.copy()
-
-            p_spr = best_assets.get("player")
-            e_spr = best_assets.get("enemy")
-            spr_sz = 140
-            p1_img = remove_flat_background(p_spr).resize((spr_sz, spr_sz), Image.LANCZOS).convert("RGBA") if p_spr else None
-            p2_img = remove_flat_background(e_spr).resize((spr_sz, spr_sz), Image.LANCZOS).convert("RGBA") if e_spr else None
-            if p2_img:
-                p2_img = p2_img.transpose(Image.FLIP_LEFT_RIGHT)
-
-            for i in range(total_frames):
-                frame = clean_bg.copy()
-                drw = ImageDraw.Draw(frame)
-
-                t = i / total_frames
-                p1_hp = max(80, int(100 - t * 20))
-                p2_hp = max(0,  int(100 - t * 110))
-                p1_x = p1_base_x + int(math.sin(t * math.pi * 2) * 18)
-                p1_y = y_ground  - int(abs(math.sin(t * math.pi * 4)) * 30)
-                p2_x = p2_base_x + int(math.sin(t * math.pi * 2 + 1) * 12)
-                p2_y = y_ground
-
-                # Hit spark when p2_hp drops
-                if 0.35 < t < 0.65 and int(t * 60) % 6 < 3:
-                    sx, sy = (p1_x + p2_x)//2, y_ground + 20
-                    drw.ellipse([sx-20, sy-20, sx+20, sy+20], fill=(255, 240, 60, 200))
-                    drw.ellipse([sx-10, sy-10, sx+10, sy+10], fill=(255, 255, 255, 220))
-
-                _draw_fighting_hud(drw, w, h, game_plan, p1_hp=p1_hp, p2_hp=p2_hp)
-
-                if p1_img: frame.paste(p1_img, (p1_x, p1_y), p1_img)
-                if p2_img: frame.paste(p2_img, (p2_x, p2_y), p2_img)
-
-                if t > 0.85:
-                    drw.text((w//2 - 30, h//2), "K.O.!", fill=(255, 50, 50, 255))
-
-                _write_frame(frame, i)
-                del frame, drw
-                if i % 15 == 0:
-                    gc.collect()
-
-        elif is_racing:
-            # ── Racing: scrolling road with cars ────────────────────────────
-            total_frames = 100
-            road_tile = best_assets.get("platform_tile")
-            car_spr   = best_assets.get("player")
-            rival_spr = best_assets.get("enemy")
-
-            road_img = road_tile.resize((w, 180), Image.LANCZOS).convert("RGBA") if road_tile else None
-            car_img  = remove_flat_background(car_spr).resize((160, 80),  Image.LANCZOS).convert("RGBA") if car_spr  else None
-            rival_img= remove_flat_background(rival_spr).resize((140, 70), Image.LANCZOS).convert("RGBA") if rival_spr else None
-
-            for i in range(total_frames):
-                frame = base_img.copy()
-                drw = ImageDraw.Draw(frame)
-
-                # Scrolling road lines
-                road_y = h // 2
-                drw.rectangle([0, road_y, w, h], fill=(42, 44, 52, 255))
-                scroll = (i * 18) % 120
-                for lx in range(-120 + scroll, w + 120, 120):
-                    drw.rectangle([lx, road_y + 50, lx + 60, road_y + 58], fill=(240, 200, 0, 255))
-                # Edge lines
-                drw.rectangle([0, road_y + 2, w, road_y + 6], fill=(255, 255, 255, 220))
-                drw.rectangle([0, h - 6, w, h], fill=(255, 255, 255, 220))
-
-                # Road texture tile
-                if road_img:
-                    for tx in range(0, w, w):
-                        frame.paste(road_img, (tx, road_y), road_img)
-
-                # Rival car (ahead)
-                rival_x = int(w * 0.55) + int(math.sin(i * 0.08) * 22)
-                if rival_img:
-                    frame.paste(rival_img, (rival_x, road_y + 20), rival_img)
-
-                # Player car
-                player_x = int(w * 0.15)
-                player_y = road_y + 40
-                if car_img:
-                    frame.paste(car_img, (player_x, player_y), car_img)
-
-                # Speed lines
-                speed = int(20 + i * 1.2)
-                drw.text((w - 180, h - 50), f"SPEED: {speed} km/h", fill=(0, 255, 240, 255))
-                drw.text((w - 180, h - 30), f"LAP  : {1 + i // 50}/3",    fill=(255, 215, 0,  255))
-
-                _write_frame(frame, i)
-                del frame, drw
-                if i % 15 == 0:
-                    gc.collect()
-
-        elif is_running:
-            # ── Infinite runner: scrolling obstacles ──────────────────────
-            total_frames = 90
-            runner_spr   = best_assets.get("player")
-            obstacle_spr = best_assets.get("enemy")
-            tile_spr     = best_assets.get("platform_tile")
-
-            runner_img  = remove_flat_background(runner_spr).resize((80, 120),  Image.LANCZOS).convert("RGBA") if runner_spr else None
-            obs_img     = remove_flat_background(obstacle_spr).resize((60, 90), Image.LANCZOS).convert("RGBA") if obstacle_spr else None
-            ground_img  = tile_spr.resize((w, 60), Image.LANCZOS).convert("RGBA") if tile_spr else None
-
-            ground_y = int(h * 0.72)
-
-            for i in range(total_frames):
-                frame = base_img.copy()
-                drw = ImageDraw.Draw(frame)
-                drw.rectangle([0, ground_y, w, h], fill=(48, 50, 58, 255))
-                if ground_img:
-                    frame.paste(ground_img, (0, ground_y), ground_img)
-
-                # Obstacles scrolling in
-                for ob_idx in range(3):
-                    ox = (w - (i * 14 + ob_idx * 280)) % (w + 80) - 80
-                    if obs_img and ox > -80:
-                        frame.paste(obs_img, (ox, ground_y - 80), obs_img)
-
-                # Runner with bounce
-                ry = ground_y - 120 - int(abs(math.sin(i * 0.25)) * 45)
-                if runner_img:
-                    frame.paste(runner_img, (int(w * 0.18), ry), runner_img)
-
-                score = i * 12
-                drw.text((16, 16), f"SCORE: {score}", fill=(255, 255, 255, 255))
-                drw.text((16, 36), f"DIST:  {score}m", fill=(200, 220, 255, 200))
-
-                _write_frame(frame, i)
-                del frame, drw
-                if i % 15 == 0:
-                    gc.collect()
-
-        elif is_strategy or is_tower:
-            # ── Strategy/TD: overhead map with units moving ───────────────
-            total_frames = 90
-            bg_spr  = best_assets.get("background")
-            unit    = best_assets.get("player")
-            enemy   = best_assets.get("enemy")
-
-            bg_img   = bg_spr.resize((w, h), Image.LANCZOS).convert("RGBA") if bg_spr else base_img.copy()
-            unit_img = remove_flat_background(unit).resize((48, 48),  Image.LANCZOS).convert("RGBA") if unit  else None
-            en_img   = remove_flat_background(enemy).resize((44, 44), Image.LANCZOS).convert("RGBA") if enemy else None
-
-            for i in range(total_frames):
-                frame = bg_img.copy()
-                drw = ImageDraw.Draw(frame)
-
-                # Grid overlay
-                for gx in range(0, w, 64):
-                    drw.line([gx, 0, gx, h], fill=(255, 255, 255, 25), width=1)
-                for gy in range(0, h, 64):
-                    drw.line([0, gy, w, gy], fill=(255, 255, 255, 25), width=1)
-
-                # Units marching along path
-                t = i / total_frames
-                for u_idx in range(4):
-                    ux = int(w * (0.1 + u_idx * 0.22 + t * 0.3)) % w
-                    uy = int(h * (0.5 + math.sin(t * math.pi * 2 + u_idx) * 0.15))
-                    if unit_img:
-                        frame.paste(unit_img, (ux, uy), unit_img)
-
-                # Enemy base
-                for e_idx in range(3):
-                    ex = int(w * (0.65 + e_idx * 0.1))
-                    ey = int(h * (0.3 + e_idx * 0.15))
-                    if en_img:
-                        frame.paste(en_img, (ex, ey), en_img)
-
-                wave = 1 + i // 30
-                drw.text((16, 16), f"WAVE: {wave}",       fill=(255, 80, 80,   255))
-                drw.text((16, 36), f"GOLD: {200 + i*3}", fill=(255, 200, 0,   255))
-
-                _write_frame(frame, i)
-                del frame, drw
-                if i % 15 == 0:
-                    gc.collect()
-
-        else:
-            # ── Default: platformer side-scroller ─────────────────────────
-            total_frames = 100
-            ts = tile_size
-            platforms = layout_json.get("platforms", [])
-            enemies_pos = layout_json.get("enemies", [])
-
-            if not platforms:
-                platforms = [[c, 11] for c in range(24)] + [[3,8],[4,8],[8,6],[14,5],[19,4],[20,4]]
-
-            all_x = [p[0] for p in platforms]
-            all_y = [p[1] for p in platforms]
-            min_x = min(all_x) if all_x else 0
-            min_y = min(all_y) if all_y else 0
-            max_x = max(all_x) if all_x else 23
-
-            world_w = max(1, (max_x - min_x + 2) * ts)
-            ts_scaled = max(ts, int(w / max(1, max_x - min_x + 2)))
-
-            tile_spr = best_assets.get("platform_tile")
-            p_spr    = best_assets.get("player")
-            e_spr    = best_assets.get("enemy")
-            bg_spr   = best_assets.get("background")
-
-            bg_img   = bg_spr.resize((w, h), Image.LANCZOS).convert("RGBA") if bg_spr else base_img.copy()
-            tile_img = tile_spr.resize((ts_scaled, ts_scaled), Image.NEAREST).convert("RGBA") if tile_spr else None
-            sprite_w = max(40, ts_scaled)
-            sprite_h = max(56, int(ts_scaled * 1.4))
-            p_img    = remove_flat_background(p_spr).resize((sprite_w, sprite_h), Image.LANCZOS).convert("RGBA") if p_spr else None
-            e_img    = remove_flat_background(e_spr).resize((sprite_w, sprite_h), Image.LANCZOS).convert("RGBA") if e_spr else None
-
-            player_pos = layout_json.get("player", [1, 10])
-
-            for i in range(total_frames):
-                cam_scroll = int(i * (world_w / total_frames))
-                frame = bg_img.copy()
-                drw = ImageDraw.Draw(frame)
-
-                # Draw platforms
-                if tile_img:
-                    for px_t, py_t in platforms:
-                        tx = (px_t - min_x) * ts_scaled - cam_scroll
-                        ty = (py_t - min_y) * ts_scaled
-                        if -ts_scaled < tx < w:
-                            frame.paste(tile_img, (tx, ty), tile_img)
-
-                # Draw enemies (patrol bob)
-                if e_img:
-                    for ex, ey in enemies_pos[:4]:
-                        ex_scr = (ex - min_x) * ts_scaled - cam_scroll + int(math.sin(i * 0.12) * 10)
-                        ey_scr = (ey - min_y) * ts_scaled - sprite_h
-                        if -sprite_w < ex_scr < w:
-                            frame.paste(e_img, (ex_scr, ey_scr), e_img)
-
-                # Draw player (walks with camera)
-                px_scr = int(w * 0.25)
-                py_scr = (player_pos[1] - min_y) * ts_scaled - sprite_h - int(abs(math.sin(i * 0.18)) * 12)
-                py_scr = max(0, min(h - sprite_h, py_scr))
-                if p_img:
-                    frame.paste(p_img, (px_scr, py_scr), p_img)
-
-                _write_frame(frame, i)
-                del frame, drw
-                if i % 15 == 0:
-                    gc.collect()
-
-    except Exception as vid_err:
-        print(f"[Video] Generation error: {vid_err}")
-    finally:
-        if writer is not None:
-            try:
-                writer.close()
-                print("[Video] Writer closed successfully.")
-            except Exception as close_err:
-                print(f"[Video] Writer close error: {close_err}")
+        frames[0].save(
+            output_path.replace(".mp4", ".gif"),
+            save_all=True,
+            append_images=frames[1:],
+            duration=40,  # ~25 fps
+            loop=0
+        )
+    except Exception as e:
+        print(f"Error saving video GIF: {e}")
+        
+    # Free memory
+    del frames
+    del base_bg
+    gc.collect()
 
 
-# --------------------------------------------------------------------------
-# Pipeline Execution Endpoint Engine
-# --------------------------------------------------------------------------
 
 def run_full_pipeline(image_path, user_description="Create a game based on the provided sketch.", job_id=None, base_url="http://localhost:7860"):
     job_dir = os.path.join(API_OUTPUT_DIR, job_id) if job_id else os.path.join(API_OUTPUT_DIR, str(uuid.uuid4())[:8])
