@@ -925,191 +925,558 @@ def generate_procedural_sprite(asset_name, prompt, width=512, height=512, seed=4
     genre_lower = (game_plan.get("genre", "") if game_plan else "").lower()
     theme_lower = (game_plan.get("theme", "") if game_plan else "").lower()
 
-    is_car = "car" in prompt_lower or "car" in theme_lower or "racer" in theme_lower or "vehicle" in prompt_lower or "rac" in genre_lower
-    is_fighting = "fight" in genre_lower or "arena" in genre_lower or "beat" in genre_lower or "brawl" in genre_lower or "fight" in theme_lower
-    is_shooter = "shoot" in genre_lower or "top down" in genre_lower or "bullet" in genre_lower or "laser" in theme_lower or "gun" in genre_lower
-    is_dragon = "dragon" in prompt_lower or "monster" in prompt_lower or "lizard" in prompt_lower or "boss" in prompt_lower
-    is_knight = "knight" in prompt_lower or "hero" in prompt_lower or "warrior" in prompt_lower or "paladin" in prompt_lower
+    is_racing    = "rac" in genre_lower or "car" in genre_lower
+    is_fighting  = "fight" in genre_lower or "arena" in genre_lower
+    is_adventure = "adventure" in genre_lower
+    is_dungeon   = "dungeon" in genre_lower
+    is_strategy  = "strategy" in genre_lower
+    is_td        = "tower" in genre_lower or "defense" in genre_lower
+    is_running   = "running" in genre_lower or "runner" in genre_lower
 
+    # ─────────────────────────────────────────────────────────────
+    # PLAYER sprites per genre
+    # ─────────────────────────────────────────────────────────────
     if asset_name == "player":
-        if is_car:
-            # 16-Bit Aerodynamic Red Supercar (Smooth Organic Car Body Curves)
-            # Dark chassis shadow
-            draw.polygon([(px(.06), py(.48)), (px(.20), py(.32)), (px(.84), py(.32)), (px(.94), py(.48)), (px(.94), py(.78)), (px(.06), py(.78))], fill=(25, 15, 20, 255))
-            # Smooth Red Car Body
-            draw.polygon([(px(.08), py(.46)), (px(.22), py(.34)), (px(.82), py(.34)), (px(.92), py(.46)), (px(.92), py(.74)), (px(.08), py(.74))], fill=(220, 25, 25, 255))
-            draw.polygon([(px(.10), py(.44)), (px(.24), py(.36)), (px(.80), py(.36)), (px(.90), py(.44))], fill=(250, 75, 75, 255)) # Metallic Body Highlight
-            # Rear Spoiler Wing
-            draw.rectangle([px(.04), py(.26), px(.18), py(.34)], fill=(160, 15, 15, 255))
-            draw.line([px(.10), py(.34), px(.10), py(.46)], fill=(15, 15, 20, 255), width=px(.02))
-            # Sloped Curved Windshield & Windows
-            draw.polygon([(px(.30), py(.34)), (px(.42), py(.20)), (px(.70), py(.20)), (px(.78), py(.34))], fill=(20, 30, 45, 255))
-            draw.polygon([(px(.34), py(.32)), (px(.44), py(.22)), (px(.68), py(.22)), (px(.74), py(.32))], fill=(120, 215, 255, 230))
-            # Gold Racing Stripe
-            draw.rectangle([px(.08), py(.50), px(.92), py(.56)], fill=(255, 215, 20, 255))
-            # Wheels with Alloy Rims
-            draw.ellipse([px(.16), py(.58), px(.36), py(.86)], fill=(15, 15, 20, 255))
-            draw.ellipse([px(.21), py(.65), px(.31), py(.79)], fill=(210, 210, 225, 255))
-            draw.ellipse([px(.64), py(.58), px(.84), py(.86)], fill=(15, 15, 20, 255))
-            draw.ellipse([px(.69), py(.65), px(.79), py(.79)], fill=(210, 210, 225, 255))
-            # Headlights glint
-            draw.rectangle([px(.86), py(.44), px(.92), py(.52)], fill=(255, 235, 60, 255))
+        if is_racing:
+            # Sleek aerodynamic supercar with proper gradients and chrome rim detail
+            # Shadow
+            draw.polygon([(px(.06),py(.50)),(px(.18),py(.30)),(px(.82),py(.30)),(px(.94),py(.50)),(px(.94),py(.80)),(px(.06),py(.80))], fill=(15,10,12,255))
+            # Main body
+            draw.polygon([(px(.08),py(.48)),(px(.20),py(.32)),(px(.80),py(.32)),(px(.92),py(.48)),(px(.92),py(.78)),(px(.08),py(.78))], fill=(210,20,20,255))
+            # Body top highlight
+            draw.polygon([(px(.10),py(.46)),(px(.22),py(.34)),(px(.78),py(.34)),(px(.90),py(.46))], fill=(255,80,80,255))
+            # Roof reflection
+            draw.polygon([(px(.28),py(.34)),(px(.38),py(.28)),(px(.62),py(.28)),(px(.72),py(.34))], fill=(255,120,120,180))
+            # Windshield (deep dark glass with blue tint)
+            draw.polygon([(px(.28),py(.34)),(px(.40),py(.18)),(px(.68),py(.18)),(px(.76),py(.34))], fill=(15,22,40,255))
+            draw.polygon([(px(.31),py(.32)),(px(.42),py(.20)),(px(.66),py(.20)),(px(.73),py(.32))], fill=(100,180,240,100))
+            # Side window
+            draw.polygon([(px(.76),py(.34)),(px(.86),py(.34)),(px(.88),py(.40)),(px(.78),py(.40))], fill=(80,150,210,100))
+            # Rear spoiler
+            draw.rectangle([px(.04),py(.24),px(.20),py(.32)], fill=(150,10,10,255))
+            draw.rectangle([px(.04),py(.22),px(.20),py(.26)], fill=(80,5,5,255))
+            draw.line([px(.12),py(.32),px(.12),py(.48)], fill=(10,8,10,255), width=px(.025))
+            # Gold racing stripe
+            draw.rectangle([px(.08),py(.52),px(.92),py(.58)], fill=(255,210,0,255))
+            draw.rectangle([px(.08),py(.56),px(.92),py(.59)], fill=(230,180,0,255))
+            # Front bumper air intake
+            draw.rectangle([px(.78),py(.60),px(.94),py(.72)], fill=(12,12,16,255))
+            draw.rectangle([px(.80),py(.62),px(.92),py(.70)], fill=(25,25,30,255))
+            # Exhaust pipes
+            draw.ellipse([px(.04),py(.60),px(.10),py(.68)], fill=(40,40,50,255))
+            draw.ellipse([px(.04),py(.68),px(.10),py(.76)], fill=(40,40,50,255))
+            # Front wheels (detailed)
+            draw.ellipse([px(.60),py(.58),px(.88),py(.90)], fill=(14,14,18,255))
+            draw.ellipse([px(.64),py(.62),px(.84),py(.86)], fill=(35,35,45,255))
+            draw.ellipse([px(.68),py(.66),px(.80),py(.82)], fill=(200,205,220,255))
+            draw.ellipse([px(.71),py(.69),px(.77),py(.79)], fill=(14,14,18,255))
+            for spoke_a in range(0, 360, 60):
+                sx = int((px(.68)+px(.80))//2 + math.cos(math.radians(spoke_a)) * px(.055))
+                sy = int((py(.66)+py(.82))//2 + math.sin(math.radians(spoke_a)) * py(.055))
+                draw.line([(px(.68)+px(.80))//2,(py(.66)+py(.82))//2,sx,sy], fill=(170,175,195,255), width=2)
+            # Rear wheels
+            draw.ellipse([px(.12),py(.58),px(.40),py(.90)], fill=(14,14,18,255))
+            draw.ellipse([px(.16),py(.62),px(.36),py(.86)], fill=(35,35,45,255))
+            draw.ellipse([px(.20),py(.66),px(.32),py(.82)], fill=(200,205,220,255))
+            draw.ellipse([px(.23),py(.69),px(.29),py(.79)], fill=(14,14,18,255))
+            # Headlights (LED glow)
+            draw.rectangle([px(.88),py(.42),px(.94),py(.50)], fill=(255,255,200,255))
+            draw.rectangle([px(.89),py(.43),px(.93),py(.49)], fill=(255,255,255,255))
+            # Tail lights
+            draw.rectangle([px(.06),py(.46),px(.12),py(.56)], fill=(220,30,30,255))
+
+        elif is_fighting:
+            # Muscular fighter in gi uniform - Street Fighter style
+            # Outline
+            draw.ellipse([px(.28),py(.04),px(.72),py(.34)], fill=(20,15,10,255))
+            draw.rectangle([px(.18),py(.26),px(.82),py(.70)], fill=(20,15,10,255))
+            draw.rectangle([px(.20),py(.66),px(.44),py(.98)], fill=(20,15,10,255))
+            draw.rectangle([px(.56),py(.66),px(.80),py(.98)], fill=(20,15,10,255))
+            # Head with skin tone and hair
+            draw.ellipse([px(.30),py(.06),px(.70),py(.32)], fill=(220,170,120,255))
+            draw.ellipse([px(.32),py(.08),px(.52),py(.26)], fill=(240,190,140,255))  # highlight
+            # Black hair
+            draw.ellipse([px(.30),py(.06),px(.70),py(.18)], fill=(25,20,18,255))
+            draw.polygon([(px(.30),py(.16)),(px(.25),py(.22)),(px(.34),py(.22))], fill=(25,20,18,255))
+            # Eyes and face
+            draw.ellipse([px(.38),py(.18),px(.46),py(.24)], fill=(40,30,20,255))
+            draw.ellipse([px(.54),py(.18),px(.62),py(.24)], fill=(40,30,20,255))
+            draw.arc([px(.42),py(.26),px(.58),py(.30)], 0, 180, fill=(180,100,80,255), width=2)
+            # Headband
+            draw.rectangle([px(.28),py(.14),px(.72),py(.20)], fill=(220,30,30,255))
+            draw.polygon([(px(.70),py(.15)),(px(.78),py(.25)),(px(.68),py(.22))], fill=(220,30,30,255))
+            # White gi body
+            draw.rectangle([px(.20),py(.28),px(.80),py(.68)], fill=(240,238,232,255))
+            draw.rectangle([px(.22),py(.30),px(.46),py(.66)], fill=(255,255,252,255))  # left panel highlight
+            # Red gi lapels
+            draw.polygon([(px(.40),py(.28)),(px(.50),py(.28)),(px(.50),py(.68)),(px(.40),py(.68))], fill=(200,30,30,255))
+            draw.polygon([(px(.50),py(.28)),(px(.60),py(.28)),(px(.60),py(.68)),(px(.50),py(.68))], fill=(200,30,30,255))
+            # Black belt
+            draw.rectangle([px(.20),py(.62),px(.80),py(.68)], fill=(20,18,18,255))
+            draw.rectangle([px(.44),py(.62),px(.56),py(.68)], fill=(35,30,25,255))  # belt knot
+            # Arms (punching pose)
+            draw.rectangle([px(.04),py(.28),px(.22),py(.50)], fill=(220,170,120,255))  # right arm extended
+            draw.rectangle([px(.78),py(.38),px(.94),py(.56)], fill=(220,170,120,255))  # left arm guard
+            draw.rectangle([px(.04),py(.42),px(.20),py(.52)], fill=(240,190,140,255))  # fist highlight
+            # Legs
+            draw.rectangle([px(.22),py(.68),px(.42),py(.96)], fill=(240,238,232,255))
+            draw.rectangle([px(.58),py(.68),px(.78),py(.96)], fill=(240,238,232,255))
+            draw.rectangle([px(.22),py(.88),px(.42),py(.98)], fill=(40,35,30,255))  # shoes
+            draw.rectangle([px(.58),py(.88),px(.78),py(.98)], fill=(40,35,30,255))
+
+        elif is_adventure or is_dungeon:
+            # Fantasy hero - detailed knight/adventurer
+            # Outline shadow layer
+            draw.ellipse([px(.28),py(.04),px(.72),py(.36)], fill=(18,16,22,255))
+            draw.polygon([(px(.16),py(.28)),(px(.84),py(.28)),(px(.88),py(.80)),(px(.12),py(.80))], fill=(18,16,22,255))
+            draw.rectangle([px(.22),py(.76),px(.78),py(.98)], fill=(18,16,22,255))
+            # Blue magic cape behind body
+            draw.polygon([(px(.14),py(.32)),(px(.28),py(.32)),(px(.18),py(.86)),(px(.08),py(.78))], fill=(30,60,160,255))
+            draw.polygon([(px(.72),py(.32)),(px(.86),py(.32)),(px(.92),py(.78)),(px(.82),py(.86))], fill=(30,60,160,255))
+            draw.polygon([(px(.16),py(.32)),(px(.28),py(.32)),(px(.20),py(.82)),(px(.10),py(.76))], fill=(60,100,210,255))  # Cape highlight
+            # Helmet - full visor plate
+            draw.ellipse([px(.30),py(.06),px(.70),py(.34)], fill=(175,188,205,255))
+            draw.ellipse([px(.32),py(.08),px(.52),py(.30)], fill=(215,228,242,255))  # Helmet highlight
+            draw.rectangle([px(.34),py(.18),px(.66),py(.26)], fill=(28,28,36,255))  # visor slit
+            draw.rectangle([px(.46),py(.18),px(.54),py(.26)], fill=(255,200,40,255))  # Gold center visor
+            draw.polygon([(px(.42),py(.02)),(px(.50),py(-.04)),(px(.58),py(.02)),(px(.52),py(.10)),(px(.48),py(.10))], fill=(210,40,40,255))  # Red plume
+            draw.polygon([(px(.44),py(.04)),(px(.50),py(-.02)),(px(.56),py(.04)),(px(.52),py(.10)),(px(.48),py(.10))], fill=(255,80,80,255))  # Plume highlight
+            # Pauldrons
+            draw.ellipse([px(.14),py(.26),px(.36),py(.48)], fill=(160,172,188,255))
+            draw.ellipse([px(.16),py(.28),px(.30),py(.42)], fill=(210,222,238,255))  # Highlight
+            draw.ellipse([px(.64),py(.26),px(.86),py(.48)], fill=(160,172,188,255))
+            draw.ellipse([px(.70),py(.28),px(.84),py(.42)], fill=(210,222,238,255))
+            # Chest plate
+            draw.rectangle([px(.28),py(.30),px(.72),py(.68)], fill=(155,168,185,255))
+            draw.rectangle([px(.30),py(.32),px(.52),py(.66)], fill=(200,215,232,255))  # Chest highlight
+            draw.polygon([(px(.36),py(.36)),(px(.50),py(.42)),(px(.64),py(.36))], fill=(230,190,40,255))  # Gold emblem
+            draw.polygon([(px(.44),py(.36)),(px(.50),py(.50)),(px(.56),py(.36))], fill=(200,162,30,255))
+            # Belt
+            draw.rectangle([px(.26),py(.64),px(.74),py(.70)], fill=(90,48,18,255))
+            draw.rectangle([px(.44),py(.63),px(.56),py(.70)], fill=(230,190,40,255))  # Buckle
+            # Greaves
+            draw.rectangle([px(.28),py(.70),px(.46),py(.90)], fill=(145,158,175,255))
+            draw.rectangle([px(.54),py(.70),px(.72),py(.90)], fill=(145,158,175,255))
+            draw.rectangle([px(.24),py(.88),px(.46),py(.98)], fill=(68,36,16,255))  # Boots
+            draw.rectangle([px(.54),py(.88),px(.76),py(.98)], fill=(68,36,16,255))
+            # Broadsword
+            draw.polygon([(px(.60),py(.40)),(px(.98),py(.82)),(px(.95),py(.86)),(px(.57),py(.44))], fill=(210,222,238,255))
+            draw.line([px(.58),py(.42),px(.96),py(.84)], fill=(255,255,255,200), width=2)
+            draw.rectangle([px(.54),py(.36),px(.66),py(.42)], fill=(230,190,40,255))  # Crossguard
+            draw.ellipse([px(.50),py(.34),px(.58),py(.40)], fill=(230,190,40,255))  # Pommel
+
+        elif is_strategy:
+            # Commander unit - RTS style
+            draw.ellipse([px(.30),py(.04),px(.70),py(.32)], fill=(15,20,15,255))
+            draw.rectangle([px(.20),py(.26),px(.80),py(.70)], fill=(15,20,15,255))
+            # Military cap
+            draw.ellipse([px(.28),py(.06),px(.72),py(.28)], fill=(40,60,35,255))
+            draw.rectangle([px(.22),py(.18),px(.78),py(.26)], fill=(30,48,25,255))
+            draw.rectangle([px(.44),py(.08),px(.56),py(.14)], fill=(255,200,0,255))  # Gold star badge
+            # Face
+            draw.ellipse([px(.32),py(.20),px(.68),py(.44)], fill=(200,160,110,255))
+            draw.ellipse([px(.34),py(.22),px(.52),py(.40)], fill=(220,180,130,255))
+            # Eyes
+            draw.ellipse([px(.38),py(.28),px(.46),py(.34)], fill=(35,30,25,255))
+            draw.ellipse([px(.54),py(.28),px(.62),py(.34)], fill=(35,30,25,255))
+            # Military uniform (green camo)
+            draw.rectangle([px(.20),py(.38),px(.80),py(.72)], fill=(55,75,45,255))
+            draw.rectangle([px(.22),py(.40),px(.50),py(.70)], fill=(70,95,55,255))  # highlight
+            # Gold epaulettes
+            draw.rectangle([px(.18),py(.38),px(.26),py(.48)], fill=(200,160,30,255))
+            draw.rectangle([px(.74),py(.38),px(.82),py(.48)], fill=(200,160,30,255))
+            # Medal ribbons
+            for my_i, mc in enumerate([(200,30,30),(30,80,200),(200,200,30),(30,160,80)]):
+                draw.rectangle([px(.30)+my_i*px(.06), py(.52), px(.34)+my_i*px(.06), py(.60)], fill=(*mc,255))
+            # Legs
+            draw.rectangle([px(.26),py(.72),px(.44),py(.96)], fill=(40,55,32,255))
+            draw.rectangle([px(.56),py(.72),px(.74),py(.96)], fill=(40,55,32,255))
+            draw.rectangle([px(.24),py(.90),px(.46),py(.98)], fill=(30,28,25,255))
+            draw.rectangle([px(.54),py(.90),px(.76),py(.98)], fill=(30,28,25,255))
+
+        elif is_td:
+            # Tower defense cannon tower
+            draw.rectangle([px(.20),py(.45),px(.80),py(.90)], fill=(18,18,22,255))
+            draw.rectangle([px(.22),py(.47),px(.78),py(.88)], fill=(55,60,75,255))
+            draw.rectangle([px(.24),py(.49),px(.50),py(.86)], fill=(75,82,100,255))  # highlight
+            # Tower battlements
+            for bx in [px(.20),px(.34),px(.48),px(.62),px(.76)]:
+                draw.rectangle([bx,py(.30),bx+px(.10),py(.47)], fill=(50,55,70,255))
+            # Cannon barrel
+            draw.rectangle([px(.42),py(.35),px(.90),py(.52)], fill=(22,22,28,255))
+            draw.rectangle([px(.44),py(.37),px(.88),py(.50)], fill=(45,45,58,255))
+            draw.ellipse([px(.84),py(.34),px(.92),py(.52)], fill=(22,22,28,255))
+            # Gold rim on barrel
+            draw.rectangle([px(.60),py(.35),px(.66),py(.52)], fill=(180,150,30,255))
+            draw.rectangle([px(.80),py(.35),px(.86),py(.52)], fill=(180,150,30,255))
+            # Base
+            draw.rectangle([px(.14),py(.88),px(.86),py(.98)], fill=(40,40,50,255))
+
+        elif is_running:
+            # Track runner - athlete in motion
+            draw.ellipse([px(.35),py(.04),px(.65),py(.28)], fill=(18,15,12,255))
+            draw.rectangle([px(.30),py(.22),px(.70),py(.58)], fill=(18,15,12,255))
+            # Head
+            draw.ellipse([px(.36),py(.06),px(.64),py(.26)], fill=(210,165,110,255))
+            draw.ellipse([px(.38),py(.08),px(.56),py(.22)], fill=(230,185,130,255))
+            # Hair
+            draw.ellipse([px(.36),py(.06),px(.64),py(.16)], fill=(20,16,12,255))
+            # Face
+            draw.ellipse([px(.43),py(.14),px(.50),py(.19)], fill=(30,22,18,255))
+            draw.ellipse([px(.53),py(.14),px(.60),py(.19)], fill=(30,22,18,255))
+            # Athletic jersey (bright)
+            draw.rectangle([px(.28),py(.24),px(.72),py(.58)], fill=(255,80,0,255))
+            draw.rectangle([px(.30),py(.26),px(.52),py(.56)], fill=(255,120,30,255))
+            # Race number
+            draw.rectangle([px(.38),py(.34),px(.62),py(.52)], fill=(255,255,255,220))
+            # Arms in running motion
+            draw.rectangle([px(.06),py(.30),px(.30),py(.44)], fill=(210,165,110,255))  # front arm
+            draw.rectangle([px(.70),py(.38),px(.90),py(.50)], fill=(210,165,110,255))  # back arm
+            # Shorts
+            draw.rectangle([px(.28),py(.56),px(.72),py(.68)], fill=(30,30,180,255))
+            # Legs (running pose)
+            draw.polygon([(px(.30),py(.66)),(px(.42),py(.66)),(px(.36),py(.96)),(px(.24),py(.90))], fill=(210,165,110,255))
+            draw.polygon([(px(.58),py(.66)),(px(.70),py(.66)),(px(.78),py(.88)),(px(.64),py(.96))], fill=(210,165,110,255))
+            # Running shoes
+            draw.polygon([(px(.22),py(.88)),(px(.38),py(.88)),(px(.38),py(.96)),(px(.18),py(.96))], fill=(255,60,0,255))
+            draw.polygon([(px(.62),py(.92)),(px(.80),py(.88)),(px(.82),py(.96)),(px(.60),py(.98))], fill=(255,60,0,255))
+            # White soles
+            draw.rectangle([px(.18),py(.94),px(.40),py(.98)], fill=(255,255,255,255))
+            draw.rectangle([px(.60),py(.94),px(.84),py(.98)], fill=(255,255,255,255))
 
         else:
-            # 16-Bit Armored Knight Hero (Matching Reference Image 4)
-            # Outline layer (Dark crisp pixels)
-            draw.ellipse([px(.28), py(.06), px(.72), py(.38)], fill=(20, 20, 30, 255))
-            draw.polygon([(px(.18), py(.30)), (px(.82), py(.30)), (px(.86), py(.78)), (px(.14), py(.78))], fill=(20, 20, 30, 255))
-            draw.rectangle([px(.24), py(.74), px(.76), py(.98)], fill=(20, 20, 30, 255))
+            # DEFAULT - Armored knight with broadsword (highly detailed)
+            draw.ellipse([px(.28),py(.04),px(.72),py(.36)], fill=(18,16,22,255))
+            draw.polygon([(px(.16),py(.28)),(px(.84),py(.28)),(px(.88),py(.80)),(px(.12),py(.80))], fill=(18,16,22,255))
+            draw.rectangle([px(.22),py(.76),px(.78),py(.98)], fill=(18,16,22,255))
+            draw.polygon([(px(.14),py(.32)),(px(.28),py(.32)),(px(.18),py(.86)),(px(.08),py(.78))], fill=(30,60,160,255))
+            draw.polygon([(px(.72),py(.32)),(px(.86),py(.32)),(px(.92),py(.78)),(px(.82),py(.86))], fill=(30,60,160,255))
+            draw.ellipse([px(.30),py(.06),px(.70),py(.34)], fill=(175,188,205,255))
+            draw.ellipse([px(.32),py(.08),px(.52),py(.30)], fill=(215,228,242,255))
+            draw.rectangle([px(.34),py(.18),px(.66),py(.26)], fill=(28,28,36,255))
+            draw.rectangle([px(.46),py(.18),px(.54),py(.26)], fill=(255,200,40,255))
+            draw.polygon([(px(.42),py(.02)),(px(.50),py(-.04)),(px(.58),py(.02)),(px(.52),py(.10)),(px(.48),py(.10))], fill=(210,40,40,255))
+            draw.ellipse([px(.14),py(.26),px(.36),py(.48)], fill=(160,172,188,255))
+            draw.ellipse([px(.64),py(.26),px(.86),py(.48)], fill=(160,172,188,255))
+            draw.rectangle([px(.28),py(.30),px(.72),py(.68)], fill=(155,168,185,255))
+            draw.rectangle([px(.30),py(.32),px(.52),py(.66)], fill=(200,215,232,255))
+            draw.polygon([(px(.36),py(.36)),(px(.50),py(.42)),(px(.64),py(.36))], fill=(230,190,40,255))
+            draw.rectangle([px(.26),py(.64),px(.74),py(.70)], fill=(90,48,18,255))
+            draw.rectangle([px(.44),py(.63),px(.56),py(.70)], fill=(230,190,40,255))
+            draw.rectangle([px(.28),py(.70),px(.46),py(.90)], fill=(145,158,175,255))
+            draw.rectangle([px(.54),py(.70),px(.72),py(.90)], fill=(145,158,175,255))
+            draw.rectangle([px(.24),py(.88),px(.46),py(.98)], fill=(68,36,16,255))
+            draw.rectangle([px(.54),py(.88),px(.76),py(.98)], fill=(68,36,16,255))
+            draw.polygon([(px(.60),py(.40)),(px(.98),py(.82)),(px(.95),py(.86)),(px(.57),py(.44))], fill=(210,222,238,255))
+            draw.line([px(.58),py(.42),px(.96),py(.84)], fill=(255,255,255,200), width=2)
+            draw.rectangle([px(.54),py(.36),px(.66),py(.42)], fill=(230,190,40,255))
+            draw.ellipse([px(.50),py(.34),px(.58),py(.40)], fill=(230,190,40,255))
 
-            # Blue Cape (Behind body)
-            draw.polygon([(px(.18), py(.32)), (px(.30), py(.32)), (px(.22), py(.82)), (px(.12), py(.82))], fill=(35, 75, 180, 255))
-            draw.polygon([(px(.70), py(.32)), (px(.82), py(.32)), (px(.88), py(.82)), (px(.78), py(.82))], fill=(35, 75, 180, 255))
-
-            # Steel Plate Helmet with visor & plume
-            draw.ellipse([px(.30), py(.08), px(.70), py(.36)], fill=(190, 200, 215, 255))
-            draw.rectangle([px(.32), py(.08), px(.50), py(.34)], fill=(230, 238, 248, 255)) # Highlight
-            draw.rectangle([px(.36), py(.20), px(.64), py(.28)], fill=(30, 30, 40, 255)) # Visor slot
-            draw.rectangle([px(.46), py(.20), px(.54), py(.28)], fill=(255, 190, 30, 255)) # Gold visor detail
-            draw.ellipse([px(.44), py(.02), px(.56), py(.14)], fill=(220, 30, 30, 255)) # Red helmet plume
-
-            # Armor Breastplate & Shoulders (Pauldrons)
-            draw.ellipse([px(.18), py(.28), px(.38), py(.46)], fill=(180, 190, 205, 255)) # Left Pauldron
-            draw.ellipse([px(.62), py(.28), px(.82), py(.46)], fill=(180, 190, 205, 255)) # Right Pauldron
-            draw.rectangle([px(.28), py(.32), px(.72), py(.66)], fill=(160, 170, 185, 255)) # Torso armor
-            draw.rectangle([px(.30), py(.34), px(.50), py(.64)], fill=(220, 230, 245, 255)) # Torso highlight
-            draw.polygon([(px(.50), py(.38)), (px(.42), py(.54)), (px(.58), py(.54))], fill=(225, 225, 240, 255)) # Cross emblem
-
-            # Leather Belt & Scabbard
-            draw.rectangle([px(.26), py(.62), px(.74), py(.68)], fill=(100, 50, 20, 255))
-            draw.rectangle([px(.44), py(.61), px(.56), py(.69)], fill=(230, 190, 40, 255)) # Buckle
-
-            # Greaves & Leather Boots
-            draw.rectangle([px(.28), py(.68), px(.46), py(.88)], fill=(150, 160, 175, 255))
-            draw.rectangle([px(.54), py(.68), px(.72), py(.88)], fill=(150, 160, 175, 255))
-            draw.rectangle([px(.24), py(.86), px(.46), py(.96)], fill=(80, 40, 20, 255))
-            draw.rectangle([px(.54), py(.86), px(.76), py(.96)], fill=(80, 40, 20, 255))
-
-            # Greatsword (Broadsword held downward right)
-            draw.polygon([(px(.62), py(.42)), (px(.92), py(.78)), (px(.96), py(.74)), (px(.66), py(.38))], fill=(210, 220, 235, 255)) # Blade
-            draw.line([px(.64), py(.40), px(.94), py(.76)], fill=(255, 255, 255, 255), width=px(.02)) # Blade edge
-            draw.rectangle([px(.58), py(.38), px(.68), py(.44)], fill=(230, 190, 40, 255)) # Crossguard
-            draw.ellipse([px(.54), py(.36), px(.60), py(.42)], fill=(230, 190, 40, 255)) # Pommel
-
+    # ─────────────────────────────────────────────────────────────
+    # ENEMY sprites per genre
+    # ─────────────────────────────────────────────────────────────
     elif asset_name == "enemy":
-        if is_car:
-            # 16-Bit Aerodynamic Blue Rival Race Car (Organic Car Body Curves)
-            # Dark chassis shadow
-            draw.polygon([(px(.06), py(.48)), (px(.20), py(.32)), (px(.84), py(.32)), (px(.94), py(.48)), (px(.94), py(.78)), (px(.06), py(.78))], fill=(15, 20, 35, 255))
-            # Sleek Blue Car Body
-            draw.polygon([(px(.08), py(.46)), (px(.22), py(.34)), (px(.82), py(.34)), (px(.92), py(.46)), (px(.92), py(.74)), (px(.08), py(.74))], fill=(25, 65, 200, 255))
-            draw.polygon([(px(.10), py(.44)), (px(.24), py(.36)), (px(.80), py(.36)), (px(.90), py(.44))], fill=(45, 105, 240, 255)) # Metallic Body Highlight
-            # Rear Spoiler Wing
-            draw.rectangle([px(.04), py(.26), px(.18), py(.34)], fill=(20, 45, 150, 255))
-            draw.line([px(.10), py(.34), px(.10), py(.46)], fill=(15, 15, 20, 255), width=px(.02))
-            # Sloped Curved Windshield & Windows
-            draw.polygon([(px(.30), py(.34)), (px(.42), py(.20)), (px(.70), py(.20)), (px(.78), py(.34))], fill=(20, 30, 45, 255))
-            draw.polygon([(px(.34), py(.32)), (px(.44), py(.22)), (px(.68), py(.22)), (px(.74), py(.32))], fill=(120, 215, 255, 230))
-            # Yellow Racing Stripe
-            draw.rectangle([px(.08), py(.50), px(.92), py(.56)], fill=(255, 215, 20, 255))
-            # Wheels with Alloy Rims
-            draw.ellipse([px(.16), py(.58), px(.36), py(.86)], fill=(15, 15, 20, 255))
-            draw.ellipse([px(.21), py(.65), px(.31), py(.79)], fill=(210, 210, 225, 255))
-            draw.ellipse([px(.64), py(.58), px(.84), py(.86)], fill=(15, 15, 20, 255))
-            draw.ellipse([px(.69), py(.65), px(.79), py(.79)], fill=(210, 210, 225, 255))
-            # Headlights glint
-            draw.rectangle([px(.86), py(.44), px(.92), py(.52)], fill=(255, 180, 20, 255))
+        if is_racing:
+            # Blue rival supercar
+            draw.polygon([(px(.06),py(.50)),(px(.18),py(.30)),(px(.82),py(.30)),(px(.94),py(.50)),(px(.94),py(.80)),(px(.06),py(.80))], fill=(10,12,22,255))
+            draw.polygon([(px(.08),py(.48)),(px(.20),py(.32)),(px(.80),py(.32)),(px(.92),py(.48)),(px(.92),py(.78)),(px(.08),py(.78))], fill=(20,50,210,255))
+            draw.polygon([(px(.10),py(.46)),(px(.22),py(.34)),(px(.78),py(.34)),(px(.90),py(.46))], fill=(60,110,255,255))
+            draw.polygon([(px(.30),py(.34)),(px(.40),py(.18)),(px(.68),py(.18)),(px(.76),py(.34))], fill=(12,18,36,255))
+            draw.polygon([(px(.32),py(.32)),(px(.42),py(.20)),(px(.66),py(.20)),(px(.73),py(.32))], fill=(80,150,240,100))
+            draw.rectangle([px(.04),py(.24),px(.20),py(.32)], fill=(10,30,140,255))
+            draw.rectangle([px(.08),py(.52),px(.92),py(.58)], fill=(0,220,255,255))  # Cyan stripe
+            # Wheels
+            draw.ellipse([px(.60),py(.58),px(.88),py(.90)], fill=(14,14,18,255))
+            draw.ellipse([px(.64),py(.62),px(.84),py(.86)], fill=(35,35,45,255))
+            draw.ellipse([px(.68),py(.66),px(.80),py(.82)], fill=(200,205,220,255))
+            draw.ellipse([px(.12),py(.58),px(.40),py(.90)], fill=(14,14,18,255))
+            draw.ellipse([px(.16),py(.62),px(.36),py(.86)], fill=(35,35,45,255))
+            draw.ellipse([px(.20),py(.66),px(.32),py(.82)], fill=(200,205,220,255))
+            draw.rectangle([px(.88),py(.42),px(.94),py(.52)], fill=(255,140,0,255))  # Headlight orange
 
-        elif is_dragon or is_knight or not is_fighting:
-            # 16-Bit Ferocious Green Dragon (Matching Reference Image 3)
-            # Outline layer
-            draw.ellipse([px(.14), py(.18), px(.86), py(.86)], fill=(15, 25, 15, 255))
-            draw.polygon([(px(.60), py(.65)), (px(.94), py(.65)), (px(.92), py(.88)), (px(.58), py(.88))], fill=(15, 25, 15, 255))
+        elif is_fighting:
+            # Cyber ninja villain
+            draw.ellipse([px(.28),py(.04),px(.72),py(.34)], fill=(15,15,20,255))
+            draw.rectangle([px(.18),py(.26),px(.82),py(.70)], fill=(15,15,20,255))
+            draw.rectangle([px(.20),py(.66),px(.44),py(.98)], fill=(15,15,20,255))
+            draw.rectangle([px(.56),py(.66),px(.80),py(.98)], fill=(15,15,20,255))
+            # Head with mask
+            draw.ellipse([px(.30),py(.06),px(.70),py(.32)], fill=(28,28,35,255))
+            draw.ellipse([px(.32),py(.08),px(.52),py(.28)], fill=(45,45,58,255))
+            # Red visor eyes
+            draw.rectangle([px(.32),py(.16),px(.68),py(.22)], fill=(210,20,20,255))
+            draw.rectangle([px(.34),py(.17),px(.66),py(.21)], fill=(255,60,60,255))
+            # Dark bodysuit with glowing purple circuits
+            draw.rectangle([px(.20),py(.28),px(.80),py(.68)], fill=(22,22,32,255))
+            draw.rectangle([px(.22),py(.30),px(.46),py(.66)], fill=(32,32,45,255))
+            # Circuit lines
+            for cy_off in [py(.36),py(.48),py(.60)]:
+                draw.line([px(.22),cy_off,px(.78),cy_off], fill=(140,0,255,180), width=2)
+            for cx_off in [px(.30),px(.50),px(.70)]:
+                draw.line([cx_off,py(.30),cx_off,py(.66)], fill=(140,0,255,120), width=1)
+            # Glowing purple shoulder pads
+            draw.ellipse([px(.14),py(.26),px(.30),py(.42)], fill=(80,0,180,255))
+            draw.ellipse([px(.16),py(.28),px(.26),py(.38)], fill=(130,0,240,255))
+            draw.ellipse([px(.70),py(.26),px(.86),py(.42)], fill=(80,0,180,255))
+            draw.ellipse([px(.74),py(.28),px(.84),py(.38)], fill=(130,0,240,255))
+            # Legs
+            draw.rectangle([px(.22),py(.68),px(.42),py(.96)], fill=(20,20,30,255))
+            draw.rectangle([px(.58),py(.68),px(.78),py(.96)], fill=(20,20,30,255))
+            draw.rectangle([px(.20),py(.90),px(.44),py(.98)], fill=(15,15,22,255))
+            draw.rectangle([px(.56),py(.90),px(.80),py(.98)], fill=(15,15,22,255))
 
+        elif is_adventure or is_dungeon:
+            # Ferocious dragon enemy
+            draw.ellipse([px(.12),py(.16),px(.88),py(.88)], fill=(12,22,12,255))
+            draw.polygon([(px(.58),py(.65)),(px(.96),py(.65)),(px(.94),py(.90)),(px(.56),py(.90))], fill=(12,22,12,255))
             # Tail
-            draw.polygon([(px(.60), py(.68)), (px(.90), py(.68)), (px(.88), py(.84)), (px(.58), py(.84))], fill=(40, 140, 50, 255))
-            draw.polygon([(px(.82), py(.68)), (px(.92), py(.68)), (px(.90), py(.84))], fill=(140, 30, 30, 255)) # Red tail tip
+            draw.polygon([(px(.60),py(.68)),(px(.92),py(.68)),(px(.90),py(.86)),(px(.58),py(.86))], fill=(38,135,48,255))
+            draw.polygon([(px(.84),py(.68)),(px(.95),py(.68)),(px(.93),py(.86))], fill=(130,25,25,255))
+            # Body
+            draw.ellipse([px(.20),py(.32),px(.74),py(.84)], fill=(42,150,52,255))
+            draw.ellipse([px(.22),py(.34),px(.48),py(.80)], fill=(70,188,80,255))  # highlight
+            # Scales pattern
+            for scale_y in [0.48,0.58,0.68]:
+                for scale_x in [0.32,0.42,0.52]:
+                    draw.ellipse([px(scale_x-0.04),py(scale_y-0.04),px(scale_x+0.04),py(scale_y+0.04)], outline=(28,108,38,255), width=2)
+            # Yellow underbelly
+            draw.ellipse([px(.30),py(.46),px(.56),py(.80)], fill=(242,210,105,255))
+            for seg_y in [0.53,0.61,0.70]:
+                draw.line([px(.32),py(seg_y),px(.54),py(seg_y)], fill=(196,162,58,255), width=max(2,px(.012)))
+            # Head
+            draw.ellipse([px(.14),py(.14),px(.56),py(.50)], fill=(42,150,52,255))
+            draw.ellipse([px(.16),py(.16),px(.38),py(.46)], fill=(78,198,90,255))
+            # Horns
+            draw.polygon([(px(.28),py(.18)),(px(.34),py(.02)),(px(.40),py(.18))], fill=(232,232,244,255))
+            draw.polygon([(px(.40),py(.20)),(px(.46),py(.04)),(px(.52),py(.20))], fill=(232,232,244,255))
+            # Eye - glowing
+            draw.ellipse([px(.26),py(.24),px(.38),py(.36)], fill=(225,25,38,255))
+            draw.ellipse([px(.29),py(.27),px(.35),py(.33)], fill=(255,80,80,255))
+            draw.rectangle([px(.31),py(.27),px(.33),py(.33)], fill=(10,10,12,255))
+            # Wings
+            draw.polygon([(px(.62),py(.22)),(px(.96),py(.06)),(px(.98),py(.44)),(px(.72),py(.38))], fill=(28,108,38,255))
+            draw.polygon([(px(.64),py(.24)),(px(.94),py(.08)),(px(.96),py(.40)),(px(.74),py(.36))], fill=(52,168,62,255))
+            # Wing membrane veins
+            draw.line([px(.65),py(.26),px(.92),py(.12)], fill=(18,78,28,255), width=2)
+            draw.line([px(.67),py(.30),px(.94),py(.26)], fill=(18,78,28,255), width=2)
+            draw.line([px(.68),py(.34),px(.92),py(.38)], fill=(18,78,28,255), width=2)
+            # Feet and claws
+            draw.ellipse([px(.22),py(.76),px(.44),py(.90)], fill=(32,120,42,255))
+            for claw_x in [px(.22),px(.28),px(.34)]:
+                draw.polygon([(claw_x,py(.86)),(claw_x+px(.04),py(.82)),(claw_x+px(.02),py(.92))], fill=(232,232,244,255))
 
-            # Body & Back Scales
-            draw.ellipse([px(.22), py(.34), px(.72), py(.82)], fill=(45, 155, 55, 255))
-            draw.ellipse([px(.24), py(.36), px(.48), py(.80)], fill=(75, 195, 85, 255)) # Body highlight
+        elif is_strategy:
+            # Enemy base/fortress
+            draw.rectangle([px(.10),py(.25),px(.90),py(.88)], fill=(55,18,18,255))
+            draw.rectangle([px(.12),py(.27),px(.88),py(.86)], fill=(80,25,25,255))
+            # Gate door
+            draw.rectangle([px(.38),py(.55),px(.62),py(.86)], fill=(30,12,12,255))
+            draw.ellipse([px(.38),py(.44),px(.62),py(.66)], fill=(30,12,12,255))
+            draw.rectangle([px(.40),py(.57),px(.60),py(.86)], fill=(22,8,8,255))
+            # Metal portcullis bars
+            for bar_x in range(px(.41),px(.60),px(.04)):
+                draw.line([bar_x,py(.46),bar_x,py(.86)], fill=(55,45,38,255), width=2)
+            for bar_y in [py(.52),py(.60),py(.68),py(.76)]:
+                draw.line([px(.40),bar_y,px(.60),bar_y], fill=(55,45,38,255), width=2)
+            # Wall parapets
+            for par_x in [px(.10),px(.22),px(.34),px(.64),px(.76)]:
+                draw.rectangle([par_x,py(.10),par_x+px(.10),py(.26)], fill=(70,22,22,255))
+            # Corner towers
+            draw.rectangle([px(.06),py(.18),px(.18),py(.88)], fill=(65,20,20,255))
+            draw.rectangle([px(.82),py(.18),px(.94),py(.88)], fill=(65,20,20,255))
+            # Arrow slits
+            for slit_y in [py(.35),py(.55),py(.72)]:
+                draw.rectangle([px(.08),slit_y,px(.16),slit_y+py(.06)], fill=(16,6,6,255))
+                draw.rectangle([px(.84),slit_y,px(.92),slit_y+py(.06)], fill=(16,6,6,255))
+            # Red evil banner
+            draw.rectangle([px(.46),py(.04),px(.54),py(.25)], fill=(60,25,25,255))
+            draw.polygon([(px(.54),py(.08)),(px(.78),py(.14)),(px(.54),py(.20))], fill=(200,20,20,255))
+            draw.ellipse([px(.62),py(.10),px(.72),py(.20)], fill=(150,10,10,255))
 
-            # Yellow Underbelly Scales
-            draw.ellipse([px(.32), py(.48), px(.54), py(.78)], fill=(245, 215, 110, 255))
-            for sy_f in [0.54, 0.62, 0.70]:
-                draw.line([px(.34), py(sy_f), px(.52), py(sy_f)], fill=(200, 165, 60, 255), width=px(.015))
+        elif is_td:
+            # Enemy creep/minion
+            draw.ellipse([px(.30),py(.06),px(.70),py(.40)], fill=(15,30,15,255))
+            draw.rectangle([px(.24),py(.32),px(.76),py(.74)], fill=(15,30,15,255))
+            # Slime green body
+            draw.ellipse([px(.32),py(.08),px(.68),py(.38)], fill=(45,180,45,255))
+            draw.ellipse([px(.34),py(.10),px(.56),py(.32)], fill=(80,220,80,255))  # highlight
+            # Big angry eyes
+            draw.ellipse([px(.36),py(.14),px(.48),py(.26)], fill=(250,250,250,255))
+            draw.ellipse([px(.52),py(.14),px(.64),py(.26)], fill=(250,250,250,255))
+            draw.ellipse([px(.39),py(.17),px(.46),py(.24)], fill=(200,20,20,255))
+            draw.ellipse([px(.55),py(.17),px(.62),py(.24)], fill=(200,20,20,255))
+            draw.ellipse([px(.41),py(.19),px(.44),py(.22)], fill=(15,10,10,255))
+            draw.ellipse([px(.57),py(.19),px(.60),py(.22)], fill=(15,10,10,255))
+            # Angry mouth
+            draw.arc([px(.38),py(.28),px(.62),py(.36)], 0, 180, fill=(18,12,12,255), width=3)
+            # Stubby arms
+            draw.ellipse([px(.08),py(.36),px(.28),py(.56)], fill=(35,155,35,255))
+            draw.ellipse([px(.72),py(.36),px(.92),py(.56)], fill=(35,155,35,255))
+            # Claw hands
+            for cl_x,cl_d in [(px(.08),1),(px(.74),1)]:
+                for cl_i in range(3):
+                    draw.polygon([(cl_x+cl_d*cl_i*px(.05),py(.50)),(cl_x+cl_d*(cl_i*px(.05)+px(.03)),py(.56)),(cl_x+cl_d*(cl_i*px(.05)+px(.02)),py(.62))], fill=(22,110,22,255))
+            # Body / belly
+            draw.rectangle([px(.26),py(.34),px(.74),py(.72)], fill=(38,160,38,255))
+            draw.ellipse([px(.32),py(.42),px(.68),py(.68)], fill=(50,200,50,255))
+            # Legs
+            draw.rectangle([px(.28),py(.70),px(.44),py(.92)], fill=(28,130,28,255))
+            draw.rectangle([px(.56),py(.70),px(.72),py(.92)], fill=(28,130,28,255))
+            draw.rectangle([px(.24),py(.88),px(.46),py(.96)], fill=(18,90,18,255))
+            draw.rectangle([px(.54),py(.88),px(.76),py(.96)], fill=(18,90,18,255))
 
-            # Head & Snout
-            draw.ellipse([px(.16), py(.16), px(.54), py(.48)], fill=(45, 155, 55, 255))
-            draw.ellipse([px(.18), py(.18), px(.38), py(.44)], fill=(85, 205, 95, 255)) # Head highlight
-
-            # Horns (White/Silver Horns)
-            draw.polygon([(px(.30), py(.20)), (px(.36), py(.04)), (px(.42), py(.20))], fill=(235, 235, 245, 255))
-            draw.polygon([(px(.42), py(.22)), (px(.48), py(.06)), (px(.54), py(.22))], fill=(235, 235, 245, 255))
-
-            # Red Eye with Black Pupil
-            draw.ellipse([px(.28), py(.26), px(.38), py(.36)], fill=(230, 30, 40, 255))
-            draw.rectangle([px(.32), py(.28), px(.36), py(.34)], fill=(15, 15, 20, 255))
-
-            # Feet & Claws
-            draw.ellipse([px(.24), py(.76), px(.42), py(.88)], fill=(35, 125, 45, 255))
-            draw.polygon([(px(.22), py(.86)), (px(.28), py(.82)), (px(.26), py(.90))], fill=(235, 235, 245, 255))
-            draw.polygon([(px(.30), py(.86)), (px(.36), py(.82)), (px(.34), py(.90))], fill=(235, 235, 245, 255))
+        elif is_running:
+            # Spike obstacle
+            draw.rectangle([px(.10),py(.58),px(.90),py(.86)], fill=(22,22,28,255))
+            draw.rectangle([px(.12),py(.60),px(.88),py(.84)], fill=(42,42,55,255))
+            # Warning stripe base
+            for strap_i in range(4):
+                col = (220,180,0,255) if strap_i%2==0 else (18,18,24,255)
+                draw.rectangle([px(.10)+strap_i*px(.20),py(.58),px(.10)+(strap_i+1)*px(.20),py(.86)], fill=col)
+            # Spikes on top
+            for sp_i in range(5):
+                sx_base = px(.12) + sp_i * px(.16)
+                draw.polygon([(sx_base,py(.58)),(sx_base+px(.08),py(.58)),(sx_base+px(.04),py(.22))], fill=(195,18,18,255))
+                draw.polygon([(sx_base+px(.01),py(.58)),(sx_base+px(.07),py(.58)),(sx_base+px(.04),py(.26))], fill=(240,60,60,255))  # highlight
+            # Bolt details on base
+            for blt_x in [px(.18),px(.40),px(.62),px(.82)]:
+                draw.ellipse([blt_x-px(.02),py(.68),blt_x+px(.02),py(.74)], fill=(155,155,175,255))
 
         else:
-            # 16-Bit Cyber Brawler Fighter
-            draw.rectangle([px(.24), py(.10), px(.76), py(.38)], fill=(35, 35, 45, 255))
-            draw.rectangle([px(.28), py(.20), px(.72), py(.30)], fill=(240, 30, 30, 255)) # Cyber Visor
-            draw.rectangle([px(.16), py(.38), px(.84), py(.76)], fill=(60, 65, 80, 255))
-            draw.polygon([(px(.06), py(.38)), (px(.20), py(.24)), (px(.20), py(.44))], fill=(230, 190, 40, 255))
-            draw.polygon([(px(.94), py(.38)), (px(.80), py(.24)), (px(.80), py(.44))], fill=(230, 190, 40, 255))
-            draw.rectangle([px(.24), py(.76), px(.46), py(.96)], fill=(30, 35, 45, 255))
-            draw.rectangle([px(.54), py(.76), px(.76), py(.96)], fill=(30, 35, 45, 255))
+            # DEFAULT dragon enemy (same as adventure)
+            draw.ellipse([px(.12),py(.16),px(.88),py(.88)], fill=(12,22,12,255))
+            draw.polygon([(px(.58),py(.65)),(px(.96),py(.65)),(px(.94),py(.90)),(px(.56),py(.90))], fill=(12,22,12,255))
+            draw.polygon([(px(.60),py(.68)),(px(.92),py(.68)),(px(.90),py(.86)),(px(.58),py(.86))], fill=(38,135,48,255))
+            draw.polygon([(px(.84),py(.68)),(px(.95),py(.68)),(px(.93),py(.86))], fill=(130,25,25,255))
+            draw.ellipse([px(.20),py(.32),px(.74),py(.84)], fill=(42,150,52,255))
+            draw.ellipse([px(.22),py(.34),px(.48),py(.80)], fill=(70,188,80,255))
+            draw.ellipse([px(.30),py(.46),px(.56),py(.80)], fill=(242,210,105,255))
+            draw.ellipse([px(.14),py(.14),px(.56),py(.50)], fill=(42,150,52,255))
+            draw.polygon([(px(.28),py(.18)),(px(.34),py(.02)),(px(.40),py(.18))], fill=(232,232,244,255))
+            draw.polygon([(px(.40),py(.20)),(px(.46),py(.04)),(px(.52),py(.20))], fill=(232,232,244,255))
+            draw.ellipse([px(.26),py(.24),px(.38),py(.36)], fill=(225,25,38,255))
+            draw.rectangle([px(.31),py(.27),px(.33),py(.33)], fill=(10,10,12,255))
+            draw.polygon([(px(.62),py(.22)),(px(.96),py(.06)),(px(.98),py(.44)),(px(.72),py(.38))], fill=(28,108,38,255))
 
+    # ─────────────────────────────────────────────────────────────
+    # PLATFORM TILE per genre
+    # ─────────────────────────────────────────────────────────────
     elif asset_name == "platform_tile":
-        if is_car:
-            # 16-Bit Asphalt Road Tile with Yellow Lines
-            draw.rectangle([0, 0, width, height], fill=(45, 48, 58, 255))
-            draw.rectangle([0, py(.42), width, py(.58)], fill=(240, 205, 30, 255))
-            random.seed(42)
-            for _ in range(30):
-                tx = random.randint(0, width - px(.08))
-                ty = random.randint(0, height - py(.08))
-                draw.rectangle([tx, ty, tx + random.randint(px(.02), px(.06)), ty + random.randint(py(.02), py(.06))], fill=(30, 32, 40, 255))
+        if is_racing:
+            # Asphalt road tile with fine texture and proper markings
+            for y in range(height):
+                t = y / height
+                shade = int(38 + t * 12)
+                draw.line([0, y, width, y], fill=(shade, shade+2, shade+4, 255))
+            # Random pebble/texture dots
+            random.seed(seed+1)
+            for _ in range(60):
+                tx = random.randint(0, width-4)
+                ty = random.randint(0, height-4)
+                shade = random.randint(28, 52)
+                draw.rectangle([tx,ty,tx+2,ty+2], fill=(shade,shade,shade+2,255))
+            # Center yellow line
+            draw.rectangle([0,py(.45),width,py(.58)], fill=(240,200,0,255))
+            draw.rectangle([0,py(.48),width,py(.55)], fill=(255,220,20,255))
+            # White edge lines
+            draw.rectangle([0,py(.06),width,py(.10)], fill=(220,220,215,255))
+            draw.rectangle([0,py(.90),width,py(.94)], fill=(220,220,215,255))
+        elif is_dungeon:
+            # Stone dungeon floor tiles with worn edges
+            draw.rectangle([0,0,width,height], fill=(52,48,44,255))
+            b = width // 3
+            for r in range(3):
+                for c in range(3):
+                    bx1,by1 = c*b + (2 if r%2 else 0), r*b
+                    bx2,by2 = bx1+b-2, by1+b-2
+                    fill_c = (62+(c*8)%18, 58+(r*6)%14, 54+(c*4)%12, 255)
+                    draw.rectangle([bx1,by1,bx2,by2], fill=fill_c)
+                    draw.line([bx1,by1,bx2,by1], fill=(78,74,70,255), width=2)
+                    draw.line([bx1,by1,bx1,by2], fill=(78,74,70,255), width=2)
+                    draw.line([bx1,by2,bx2,by2], fill=(32,28,26,255), width=3)
+                    draw.line([bx2,by1,bx2,by2], fill=(32,28,26,255), width=3)
+            # Cracks and grime
+            random.seed(seed+5)
+            for _ in range(6):
+                cx = random.randint(10,width-10)
+                cy = random.randint(10,height-10)
+                draw.line([cx,cy,cx+random.randint(-20,20),cy+random.randint(-20,20)], fill=(28,24,22,200), width=1)
+        elif is_strategy or is_td:
+            # Grass terrain tile
+            for y in range(height):
+                t = y / height
+                r = int(38+t*12)
+                g = int(88+t*22)
+                b_val = int(28+t*10)
+                draw.line([0,y,width,y], fill=(r,g,b_val,255))
+            # Grass blades
+            random.seed(seed+3)
+            for _ in range(50):
+                gx = random.randint(0,width-4)
+                gy_base = random.randint(height//2,height-4)
+                gh = random.randint(6,18)
+                draw.line([gx,gy_base,gx+random.randint(-3,3),gy_base-gh], fill=(48+random.randint(-10,20),118+random.randint(-15,20),38+random.randint(-8,12),255), width=2)
+        elif is_running:
+            # Lane tile with dashes
+            for y in range(height):
+                t = y/height
+                shade = int(48+t*8)
+                draw.line([0,y,width,y], fill=(shade,shade+2,shade+4,255))
+            draw.rectangle([0,py(.04),width,py(.10)], fill=(240,240,235,255))
+            draw.rectangle([0,py(.90),width,py(.96)], fill=(240,240,235,255))
+            # Dash
+            if seed % 2 == 0:
+                draw.rectangle([0,py(.45),width,py(.55)], fill=(240,200,0,255))
+        elif is_adventure:
+            # Grass/dirt ground
+            for y in range(height):
+                t = y/height
+                if t < 0.3:
+                    draw.line([0,y,width,y], fill=(int(52+t*20),int(130+t*30),int(38+t*12),255))
+                else:
+                    tt = (t-0.3)/0.7
+                    draw.line([0,y,width,y], fill=(int(100+tt*30),int(72+tt*18),int(42+tt*12),255))
+            random.seed(seed+4)
+            for _ in range(20):
+                fx = random.randint(2,width-6)
+                fy = random.randint(2,int(height*0.25))
+                draw.ellipse([fx,fy,fx+4,fy+6], fill=(70,180,50,255))
         else:
-            # 16-Bit Mossy Stone Brick Blocks (Matching Reference Image 1)
-            draw.rectangle([0, 0, width, height], fill=(70, 75, 65, 255))
-            
-            # Draw grid of individual stone bricks with highlight edges and dark grout lines
+            # Mossy stone brick (detailed)
+            draw.rectangle([0,0,width,height], fill=(68,72,62,255))
             b_size = width // 4
             for r in range(4):
                 for c in range(4):
-                    bx1, by1 = c * b_size, r * b_size
-                    bx2, by2 = bx1 + b_size - 1, by1 + b_size - 1
-                    
-                    # Brick fill
-                    fill_c = (110 + (c*15)%30, 115 + (r*12)%25, 95 + (c*10)%20, 255)
-                    draw.rectangle([bx1, by1, bx2, by2], fill=fill_c)
-                    
-                    # Top/Left highlight edge
-                    draw.line([bx1, by1, bx2, by1], fill=(160, 165, 145, 255), width=2)
-                    draw.line([bx1, by1, bx1, by2], fill=(160, 165, 145, 255), width=2)
-                    
-                    # Bottom/Right dark shadow groove
-                    draw.line([bx1, by2, bx2, by2], fill=(45, 48, 40, 255), width=3)
-                    draw.line([bx2, by1, bx2, by2], fill=(45, 48, 40, 255), width=3)
+                    offset = b_size//2 if r%2 else 0
+                    bx1 = (c*b_size + offset) % width
+                    by1 = r*b_size
+                    bx2 = min(bx1+b_size-3, width-1)
+                    by2 = by1+b_size-3
+                    fill_c = (102+(c*12)%28, 108+(r*10)%22, 88+(c*8)%18, 255)
+                    draw.rectangle([bx1,by1,bx2,by2], fill=fill_c)
+                    draw.line([bx1,by1,bx2,by1], fill=(145,152,130,255), width=2)
+                    draw.line([bx1,by1,bx1,by2], fill=(145,152,130,255), width=2)
+                    draw.line([bx1,by2,bx2,by2], fill=(38,40,32,255), width=3)
+                    draw.line([bx2,by1,bx2,by2], fill=(38,40,32,255), width=3)
+            # Moss
+            random.seed(seed+101)
+            for _ in range(14):
+                mx = random.randint(4,width-20)
+                my = random.randint(4,height-16)
+                draw.rectangle([mx,my,mx+random.randint(8,20),my+random.randint(6,14)], fill=(58,138,32,200))
+                draw.rectangle([mx+2,my+2,mx+random.randint(4,12),my+5], fill=(100,185,48,200))
 
-            # Add green moss tufts & cracks
-            random.seed(101)
-            for _ in range(12):
-                mx = random.randint(8, width - 24)
-                my = random.randint(8, height - 24)
-                draw.rectangle([mx, my, mx + random.randint(10, 22), my + random.randint(8, 16)], fill=(65, 145, 35, 255))
-                draw.rectangle([mx + 2, my + 2, mx + random.randint(6, 14), my + 6], fill=(115, 195, 55, 255))
-
+    # ─────────────────────────────────────────────────────────────
+    # BACKGROUND - delegate to draw_parallax_sky (already rich)
+    # ─────────────────────────────────────────────────────────────
     else:
         return draw_parallax_sky(width, height, game_plan)
 
+    # Apply a subtle sharpening pass to crisp up pixel edges
+    try:
+        img = img.filter(ImageFilter.SHARPEN)
+    except Exception:
+        pass
     return img
 
 
@@ -1145,35 +1512,112 @@ def generate_asset(prompt, width=512, height=512, num_images=3, seed=42, genre="
 
 
 def generate_all_assets(game_plan, save_dir, job_id=None):
-    set_job_status(job_id, "Checking pixel-art generation engine...", 32, "Selecting SDXL or Fast CPU mode")
+    set_job_status(job_id, "Initialising asset generation engine...", 32, "Selecting SDXL or Procedural CPU mode")
     os.makedirs(save_dir, exist_ok=True)
-    assets = game_plan.get("assets", {})
-    genre = game_plan.get("genre", "default")
-    theme = game_plan.get("theme", "")
+    assets  = game_plan.get("assets", {})
+    genre   = game_plan.get("genre", "default")
+    theme   = game_plan.get("theme", "")
+    title   = game_plan.get("title", "")
 
     genre_lower = genre.lower()
     theme_lower = theme.lower()
-    is_car = "rac" in genre_lower or "car" in genre_lower or "vehicle" in theme_lower or "racer" in theme_lower
+
+    # Genre flags
+    is_racing   = "rac" in genre_lower or "car"      in genre_lower
+    is_fighting = "fight" in genre_lower or "arena"  in genre_lower
+    is_dungeon  = "dungeon" in genre_lower
+    is_strategy = "strategy" in genre_lower
+    is_td       = "tower" in genre_lower or "defense" in genre_lower
+    is_running  = "running" in genre_lower or "runner" in genre_lower
+    is_adventure= "adventure" in genre_lower
+
+    # Quality prefix: modern AAA game art style, NOT 16-bit
+    def quality_prefix(style):
+        return (f"professional {style} game art, high quality, sharp clean linework, "
+                f"vibrant colors, detailed shading, transparent background, "
+                f"full body character sprite on white background")
 
     def get_dynamic_prompt(key, fallback_desc):
-        if is_car:
-            if key == "enemy":
-                return f"{LORA_TRIGGER}, 16-bit pixel art blue rival racing car, sleek aerodynamic sports car, speed side-view, sharp dark pixel outline, detailed pixel shading, isolated on pure white background"
-            elif key == "player":
-                return f"{LORA_TRIGGER}, 16-bit pixel art red supercar sports car, speed side-view, sharp dark pixel outline, detailed pixel shading, isolated on pure white background"
-            elif key == "platform_tile":
-                return f"{LORA_TRIGGER}, 16-bit pixel art asphalt road tile, yellow dashed center line, road surface, isolated on pure white background"
-            elif key == "background":
-                return f"{LORA_TRIGGER}, 16-bit pixel art night city racing background, neon city skyline, dark road with dashes, parallax buildings, isolated on pure white background"
-        if key in assets and assets[key]:
-            return f"{LORA_TRIGGER}, {assets[key]}, sharp dark pixel outline, detailed pixel shading, 16-bit SNES arcade sprite, isolated on pure white background"
-        return f"{LORA_TRIGGER}, 16-bit pixel art {genre} {key}, {theme}, {fallback_desc}, sharp dark pixel outline, detailed pixel shading, isolated on pure white background"
+        # Use GPT-planned asset prompt if available
+        gpt_prompt = assets.get(key, "")
+
+        if is_racing:
+            BASE = "modern racing game art style, high-fidelity 3D-rendered look"
+            PROMPTS = {
+                "player":        f"{quality_prefix(BASE)}, red supercar racing vehicle, side view, aerodynamic body, chrome rims, LED headlights, bold livery",
+                "enemy":         f"{quality_prefix(BASE)}, blue rival sports car, side view, sleek aerodynamic body, aggressive bumper, glowing tail lights",
+                "platform_tile": f"{quality_prefix('racing game')}, asphalt race track tile, yellow dashed center line, grip surface texture, top-down view",
+                "background":    f"cyberpunk night city racing panorama, neon lit skyline, rain-wet road reflections, motion blur lights, ultra wide game background, 16:9",
+            }
+        elif is_fighting:
+            BASE = "2D fighting game sprite art, Street Fighter / Guilty Gear style"
+            PROMPTS = {
+                "player":        f"{quality_prefix(BASE)}, muscular martial arts hero in gi uniform, dynamic fighting stance, red headband, full body",
+                "enemy":         f"{quality_prefix(BASE)}, menacing cyber ninja villain, dark bodysuit, glowing red visor, full body",
+                "platform_tile": f"{quality_prefix('fighting arena')}, marble fighting arena floor tile, polished stone surface, decorative border",
+                "background":    f"dramatic fighting game arena background, Japanese dojo / neon city, crowd silhouettes, dramatic lighting, ultra wide 16:9",
+            }
+        elif is_dungeon:
+            BASE = "dungeon crawler RPG game art"
+            PROMPTS = {
+                "player":        f"{quality_prefix(BASE)}, armored fantasy hero warrior, full plate armor, sword and shield, determined expression, full body sprite",
+                "enemy":         f"{quality_prefix(BASE)}, terrifying skeleton warrior enemy, glowing eye sockets, rusted armor, full body sprite",
+                "platform_tile": f"{quality_prefix('dungeon game')}, dark stone dungeon floor brick tile, torchlight shading, moss and cracks",
+                "background":    f"dark fantasy dungeon corridor background, stone walls, flickering torches, treasure chests, atmospheric fog, ultra wide 16:9",
+            }
+        elif is_strategy:
+            BASE = "real-time strategy game unit art"
+            PROMPTS = {
+                "player":        f"{quality_prefix(BASE)}, medieval knight commander unit, top-down isometric perspective, blue banner, full body",
+                "enemy":         f"{quality_prefix(BASE)}, orc warlord enemy unit, top-down isometric, red banner, war axe, full body",
+                "platform_tile": f"{quality_prefix('strategy game')}, green grass terrain tile, light shadow, top-down view, hex grid compatible",
+                "background":    f"medieval strategy game map background, rolling hills, rivers, castles on horizon, painterly style, ultra wide 16:9",
+            }
+        elif is_td:
+            BASE = "tower defense game art"
+            PROMPTS = {
+                "player":        f"{quality_prefix(BASE)}, stone cannon tower, detailed battlements, muzzle flash, medieval fantasy style, full asset",
+                "enemy":         f"{quality_prefix(BASE)}, green slime creep enemy, big angry eyes, stubby arms, full body sprite",
+                "platform_tile": f"{quality_prefix('tower defense game')}, grass path tile, worn dirt road, top-down view",
+                "background":    f"tower defense game field background, winding enemy path, lush green landscape, castle gate, ultra wide 16:9",
+            }
+        elif is_running:
+            BASE = "endless runner mobile game art"
+            PROMPTS = {
+                "player":        f"{quality_prefix(BASE)}, athletic runner character in bright tracksuit, dynamic running pose, side view, full body sprite",
+                "enemy":         f"{quality_prefix(BASE)}, dangerous spike trap obstacle, warning stripes, metallic spikes, side view",
+                "platform_tile": f"{quality_prefix('runner game')}, city street lane tile, asphalt texture, white painted lines, side view",
+                "background":    f"endless runner city skyline background, colorful buildings, clouds, bright daylight, parallax layers, ultra wide 16:9",
+            }
+        elif is_adventure:
+            BASE = "action adventure RPG game art"
+            PROMPTS = {
+                "player":        f"{quality_prefix(BASE)}, brave fantasy adventurer hero, green tunic, leather boots, sword at side, full body character sprite",
+                "enemy":         f"{quality_prefix(BASE)}, ferocious green dragon enemy, wings spread, glowing red eyes, sharp claws, full body sprite",
+                "platform_tile": f"{quality_prefix('adventure game')}, grassy ground platform tile, dirt and grass texture, side view",
+                "background":    f"lush fantasy adventure world background, enchanted forest, mountains, glowing portal, waterfalls, ultra wide 16:9",
+            }
+        else:
+            # Default platformer
+            BASE = "2D platformer game art, SNES / indie style"
+            PROMPTS = {
+                "player":        f"{quality_prefix(BASE)}, brave knight hero character, silver armor, blue cape, broadsword, full body sprite side view",
+                "enemy":         f"{quality_prefix(BASE)}, menacing green dragon enemy, fire breath, full body sprite side view",
+                "platform_tile": f"{quality_prefix('platformer game')}, mossy stone brick platform tile, highlighted top edge, side view",
+                "background":    f"enchanted twilight forest background, mountains silhouette, aurora borealis, glowing mushrooms, ultra wide panorama 16:9",
+            }
+
+        # If GPT provided a specific asset prompt, enrich it rather than replace
+        base_p = PROMPTS.get(key, f"{quality_prefix(BASE)}, {fallback_desc}")
+        if gpt_prompt:
+            return f"{base_p}, {gpt_prompt}"
+        return base_p
 
     configs = {
-        "player":        {"prompt": get_dynamic_prompt("player", "16-bit pixel art hero main character"), "width": 512, "height": 512, "num": 3, "progress": 40},
-        "enemy":         {"prompt": get_dynamic_prompt("enemy", "16-bit pixel art rival opponent asset"), "width": 512, "height": 512, "num": 3, "progress": 55},
-        "platform_tile": {"prompt": get_dynamic_prompt("platform_tile", "16-bit pixel art terrain tile surface"), "width": 512, "height": 512, "num": 3, "progress": 70},
-        "background":    {"prompt": get_dynamic_prompt("background", "16-bit pixel art environment landscape panel"), "width": 1024, "height": 512, "num": 3, "progress": 82},
+        "player":        {"prompt": get_dynamic_prompt("player",        "hero character sprite"), "width": 512, "height": 512, "num": 2, "progress": 40},
+        "enemy":         {"prompt": get_dynamic_prompt("enemy",         "enemy character sprite"), "width": 512, "height": 512, "num": 2, "progress": 55},
+        "platform_tile": {"prompt": get_dynamic_prompt("platform_tile", "terrain tile"),           "width": 512, "height": 512, "num": 2, "progress": 70},
+        "background":    {"prompt": get_dynamic_prompt("background",    "game environment scene"), "width": 1024,"height": 512, "num": 2, "progress": 82},
     }
 
     use_fast_mode = (DEVICE == "cpu")
@@ -1182,16 +1626,16 @@ def generate_all_assets(game_plan, save_dir, job_id=None):
         try:
             ensure_sdxl_loaded()
         except Exception as e:
-            print(f"SDXL load note ({e}), switching to Fast CPU mode...")
+            print(f"SDXL load note ({e}), switching to Procedural CPU mode...")
             use_fast_mode = True
 
     all_candidates = {}
     for asset_name, cfg in configs.items():
         set_job_status(
             job_id,
-            f"Generating 16-bit pixel art: {asset_name.replace('_', ' ').title()}...",
+            f"Generating {genre} {asset_name.replace('_', ' ')} asset...",
             cfg["progress"],
-            f"Creating candidates for '{cfg['prompt'][:40]}...'"
+            f"Rendering '{cfg['prompt'][:55]}...'"
         )
         if use_fast_mode:
             candidates = [
@@ -1724,456 +2168,332 @@ def auto_fix_level(layout_json, max_attempts=5):
                     layout["platforms"].append(new_tile)
     return layout, [], {"status": "COULD NOT FIX", "attempts": max_attempts}
 
+
 # --------------------------------------------------------------------------
-# Phase 8 - Rich Action Video Preview Generator
+# Phase 8 - Rich Action Video Preview Generator (Fixed)
 # --------------------------------------------------------------------------
 
-def generate_preview_video(scene, layout_json, path, best_assets, output_path, fps=24, tile_size=32, game_plan=None):
-    genre_lower = (game_plan.get("genre", "") if game_plan else "").lower()
-    theme_lower = (game_plan.get("theme", "") if game_plan else "").lower()
+def _try_init_video_writer(output_path, fps=20):
+    """Try ffmpeg MP4 writer; return (writer, mode) where mode='mp4' or 'gif' or None."""
+    import imageio
+    # Try mp4 first
+    try:
+        w = imageio.get_writer(
+            output_path, fps=fps, codec="libx264", quality=7,
+            macro_block_size=None,
+            ffmpeg_params=["-preset", "ultrafast", "-pix_fmt", "yuv420p"]
+        )
+        return w, "mp4"
+    except Exception as e:
+        print(f"[Video] libx264 unavailable ({e}), trying gif fallback...")
 
-    is_racing = "rac" in genre_lower
-    is_fighting = "fight" in genre_lower
-    is_adventure = "adventure" in genre_lower
-    is_dungeon = "dungeon" in genre_lower
-    is_strategy = "strategy" in genre_lower
-    is_tower_defense = "tower" in genre_lower or "td" in genre_lower
-    is_running = "run" in genre_lower
+    # GIF fallback
+    gif_path = output_path.replace(".mp4", ".gif")
+    try:
+        w = imageio.get_writer(gif_path, mode="I", fps=min(fps, 10), loop=0)
+        return w, "gif"
+    except Exception as e2:
+        print(f"[Video] GIF writer also failed ({e2}) - video skipped.")
+        return None, None
 
-    vp_w, vp_h = 640, 368
-    base_img = scene.convert("RGBA").resize((vp_w, vp_h), Image.BILINEAR)
-    w, h = vp_w, vp_h
-    
+
+def generate_preview_video(scene, layout_json, path, best_assets, output_path,
+                           fps=20, tile_size=32, game_plan=None):
+    """Generate a short animated preview video (MP4 or GIF fallback)."""
     import imageio
     import gc
-    writer = None
-    try:
-        writer = imageio.get_writer(output_path, fps=20, codec="libx264", quality=8, macro_block_size=None, ffmpeg_params=['-preset', 'ultrafast'])
-    except Exception as e:
-        print(f"Video writer init error: {e}")
 
-    if is_fighting:
-        bg_asset = best_assets.get("background")
-        if bg_asset:
-            clean_bg = bg_asset.resize((w, h), Image.LANCZOS).convert("RGBA")
-        else:
-            clean_bg = draw_parallax_sky(w, h, game_plan).convert("RGBA")
-
-        total_frames = 150
-        p1_base_x = int(w * 0.22)
-        p2_base_x = int(w * 0.62)
-        y_ground = int(h * 0.44)
-
-        player_sprite = best_assets.get("player")
-        enemy_sprite = best_assets.get("enemy")
-        p1_img = remove_flat_background(player_sprite).resize((160, 160), Image.NEAREST).convert("RGBA") if player_sprite else None
-        p2_img = remove_flat_background(enemy_sprite).resize((160, 160), Image.NEAREST).convert("RGBA") if enemy_sprite else None
-        if p2_img:
-            p2_img = p2_img.transpose(Image.FLIP_LEFT_RIGHT)
-
-        for i in range(total_frames):
-            frame_img = clean_bg.copy()
-            draw = ImageDraw.Draw(frame_img)
-
-            p1_hp, p2_hp = 100, 100
-            p1_x, p1_y = p1_base_x, y_ground
-            p2_x, p2_y = p2_base_x, y_ground
-            shake_x, shake_y = 0, 0
-            show_hit_spark = False
-            show_fireball = False
-            fireball_x = 0
-            ko_text = False
-
-            v_i = int(i * (240.0 / 150.0))
-            if v_i < 35:
-                progress = v_i / 35.0
-                p1_x = p1_base_x + int(progress * 60)
-                p2_x = p2_base_x - int(progress * 40)
-            elif v_i < 75:
-                p1_x = p1_base_x + 60 + int(math.sin((v_i - 35) * 0.5) * 15)
-                p2_x = p2_base_x - 40
-                p2_hp = max(60, 100 - int((v_i - 35) * 1.0))
-                if (v_i % 8) < 4:
-                    show_hit_spark = True
-            elif v_i < 120:
-                p1_x = p1_base_x + 50
-                p2_x = p2_base_x - 30
-                p2_hp = 60
-                p1_hp = max(85, 100 - int((v_i - 75) * 0.35))
-                show_fireball = True
-                fireball_x = p2_x - int((v_i - 75) * 6)
-            elif v_i < 170:
-                t = (v_i - 120) / 50.0
-                p1_x = p1_base_x + 50 + int(t * 120)
-                p1_y = y_ground - int(math.sin(t * math.pi) * 90)
-                p2_hp = max(0, 60 - int(t * 70))
-                if 0.4 < t < 0.8:
-                    shake_x = random.randint(-4, 4)
-                    shake_y = random.randint(-4, 4)
-                    show_hit_spark = True
-            else:
-                p1_x = p1_base_x + 140
-                p1_y = y_ground
-                p2_x = p2_base_x + 30
-                p2_y = y_ground + 35
-                p1_hp = 85
-                p2_hp = 0
-                ko_text = True
-
-            _draw_fighting_hud(draw, w, h, game_plan, p1_hp=p1_hp, p2_hp=p2_hp)
-
-            if show_fireball and fireball_x > p1_x:
-                draw.ellipse([fireball_x - 18, y_ground + 40, fireball_x + 18, y_ground + 76], fill=(255, 160, 20, 255))
-                draw.ellipse([fireball_x - 10, y_ground + 46, fireball_x + 10, y_ground + 70], fill=(255, 240, 80, 255))
-
-            if p1_img: frame_img.paste(p1_img, (p1_x + shake_x, p1_y + shake_y), p1_img)
-            if p2_img: frame_img.paste(p2_img, (p2_x + shake_x, p2_y + shake_y), p2_img)
-
-            if show_hit_spark:
-                hx = p2_x + 20
-                hy = p2_y + 40
-                draw.polygon([(hx, hy-25), (hx+12, hy-8), (hx+28, hy-18), (hx+15, hy), (hx+30, hy+15), (hx+8, hy+8), (hx, hy+30), (hx-8, hy+8), (hx-25, hy+15), (hx-12, hy)], fill=(255, 230, 40, 255))
-
-            if ko_text:
-                draw.rectangle([w // 2 - 120, h // 2 - 40, w // 2 + 120, h // 2 + 30], fill=(20, 20, 30, 230))
-                draw.rectangle([w // 2 - 120, h // 2 - 40, w // 2 + 120, h // 2 + 30], outline=(255, 215, 0, 255), width=3)
-                draw.text((w // 2 - 50, h // 2 - 15), "K. O.", fill=(255, 40, 40, 255))
-                draw.text((w // 2 - 80, h // 2 + 10), "P1 VICTORY!", fill=(255, 215, 0, 255))
-
-            if writer:
-                writer.append_data(np.array(frame_img.convert("RGB")))
-            del frame_img
-            if i % 10 == 0: gc.collect()
-
-    elif is_racing:
-        total_frames = 150
-        player_sprite = best_assets.get("player")
-        enemy_sprite = best_assets.get("enemy")
-        car_p1 = remove_flat_background(player_sprite).resize((180, 90), Image.NEAREST).convert("RGBA") if player_sprite else None
-        car_p2 = remove_flat_background(enemy_sprite).resize((120, 60), Image.NEAREST).convert("RGBA") if enemy_sprite else None
-
-        for i in range(total_frames):
-            bg_asset = best_assets.get("background")
-            if bg_asset:
-                frame_img = bg_asset.resize((w, h), Image.LANCZOS).convert("RGBA")
-            else:
-                frame_img = draw_parallax_sky(w, h, game_plan).convert("RGBA")
-            draw = ImageDraw.Draw(frame_img)
-
-            # Draw race track lines perspective
-            draw.polygon([(w // 2 - 25, h // 2), (w // 2 + 25, h // 2), (w, h), (0, h)], fill=(40, 40, 45, 255))
-            draw.line([w // 2, h // 2, w // 2, h], fill=(255, 215, 0, 255), width=2)
-
-            progress = i / float(total_frames)
-            p1_x = int(w * 0.08 + progress * (w * 0.55))
-            p2_x = int(w * 0.45 + progress * (w * 0.20))
-            p1_y = int(h * 0.72)
-            p2_y = int(h * 0.58)
-
-            if car_p2 and progress < 0.9:
-                frame_img.paste(car_p2, (p2_x, p2_y), car_p2)
-
-            if car_p1:
-                frame_img.paste(car_p1, (p1_x, p1_y), car_p1)
-
-            _draw_racing_hud(draw, w, h)
-
-            if progress > 0.8:
-                draw.rectangle([w // 2 - 140, 80, w // 2 + 140, 140], fill=(10, 20, 30, 230))
-                draw.rectangle([w // 2 - 140, 80, w // 2 + 140, 140], outline=(0, 255, 200, 255), width=3)
-                draw.text((w // 2 - 100, 98), "FINISH! 1ST PLACE", fill=(0, 255, 240, 255))
-
-            if writer:
-                writer.append_data(np.array(frame_img.convert("RGB")))
-            del frame_img
-            if i % 10 == 0: gc.collect()
-
-    elif is_adventure:
-        total_frames = 150
-        player_sprite = best_assets.get("player")
-        enemy_sprite = best_assets.get("enemy")
-        p_img = remove_flat_background(player_sprite).resize((120, 120), Image.NEAREST).convert("RGBA") if player_sprite else None
-        chest_img = remove_flat_background(enemy_sprite).resize((90, 90), Image.NEAREST).convert("RGBA") if enemy_sprite else None
-
-        bg_asset = best_assets.get("background")
-        if bg_asset:
-            clean_bg = bg_asset.resize((w, h), Image.LANCZOS).convert("RGBA")
-        else:
-            clean_bg = draw_parallax_sky(w, h, game_plan).convert("RGBA")
-
-        for i in range(total_frames):
-            frame_img = clean_bg.copy()
-            draw = ImageDraw.Draw(frame_img)
-            draw.rectangle([0, int(h * 0.72), w, h], fill=(120, 85, 45, 255))
-            draw.rectangle([0, int(h * 0.72), w, int(h * 0.74)], fill=(160, 120, 70, 255))
-
-            progress = i / float(total_frames)
-            px = int(w * 0.15 + progress * (w * 0.45))
-            py = int(h * 0.50)
-
-            if chest_img and progress < 0.85:
-                frame_img.paste(chest_img, (int(w * 0.70), int(h * 0.58)), chest_img)
-
-            if p_img:
-                frame_img.paste(p_img, (px, py), p_img)
-
-            if progress >= 0.85:
-                ky = int(h * 0.55 - (progress - 0.85) * 200)
-                draw.rectangle([int(w * 0.75), ky, int(w * 0.75) + 12, ky + 6], fill=(255, 215, 0, 255))
-                draw.ellipse([int(w * 0.75) - 6, ky - 4, int(w * 0.75) + 2, ky + 10], fill=(255, 215, 0, 255))
-
-            # HUD
-            draw.rectangle([10, 10, 260, 55], fill=(30, 30, 40, 220), outline=(218, 165, 32, 255), width=2)
-            draw.text((20, 16), "QUEST: FIND THE MYSTIC KEY", fill=(255, 215, 0, 255))
-            draw.text((20, 32), f"INVENTORY: [{'KEY' if progress >= 0.85 else ' '}] KEY  [ ] MAP", fill=(200, 200, 200, 255))
-
-            if writer:
-                writer.append_data(np.array(frame_img.convert("RGB")))
-            del frame_img
-            if i % 10 == 0: gc.collect()
-
-    elif is_dungeon:
-        total_frames = 150
-        player_sprite = best_assets.get("player")
-        enemy_sprite = best_assets.get("enemy")
-        p_img = remove_flat_background(player_sprite).resize((90, 90), Image.NEAREST).convert("RGBA") if player_sprite else None
-        e_img = remove_flat_background(enemy_sprite).resize((90, 90), Image.NEAREST).convert("RGBA") if enemy_sprite else None
-
-        for i in range(total_frames):
-            frame_img = Image.new("RGBA", (w, h), (20, 15, 15, 255))
-            draw = ImageDraw.Draw(frame_img)
-            for gx in range(0, w, 48):
-                for gy in range(0, h, 48):
-                    draw.rectangle([gx, gy, gx + 46, gy + 46], fill=(40, 35, 35, 255), outline=(50, 45, 45, 255))
-            draw.rectangle([0, 0, w, 24], fill=(20, 20, 20, 255))
-            draw.rectangle([0, h-24, w, h], fill=(20, 20, 20, 255))
-
-            progress = i / float(total_frames)
-            px = int(w * 0.15 + progress * (w * 0.50))
-            py = h // 2 - 45
-
-            if e_img and progress < 0.80:
-                frame_img.paste(e_img, (w - 200, h // 2 - 45), e_img)
-
-            if p_img:
-                frame_img.paste(p_img, (px, py), p_img)
-
-            if 0.75 <= progress <= 0.85:
-                hx = w - 180
-                hy = h // 2
-                draw.polygon([(hx, hy-25), (hx+12, hy-8), (hx+28, hy-18), (hx+15, hy), (hx+30, hy+15), (hx+8, hy+8), (hx, hy+30), (hx-8, hy+8), (hx-25, hy+15), (hx-12, hy)], fill=(255, 230, 40, 255))
-
-            # HUD
-            draw.rectangle([10, 10, 220, 50], fill=(15, 10, 10, 230), outline=(255, 50, 50, 255), width=2)
-            draw.text((20, 16), "DUNGEON LEVEL 1", fill=(255, 50, 50, 255))
-            draw.text((20, 30), f"HP: 100/100  KEYS: {1 if progress >= 0.85 else 0}", fill=(255, 255, 255, 255))
-
-            if writer:
-                writer.append_data(np.array(frame_img.convert("RGB")))
-            del frame_img
-            if i % 10 == 0: gc.collect()
-
-    elif is_strategy:
-        total_frames = 150
-        player_sprite = best_assets.get("player")
-        enemy_sprite = best_assets.get("enemy")
-        base1 = remove_flat_background(player_sprite).resize((110, 110), Image.NEAREST).convert("RGBA") if player_sprite else None
-        base2 = remove_flat_background(enemy_sprite).resize((110, 110), Image.NEAREST).convert("RGBA") if enemy_sprite else None
-
-        for i in range(total_frames):
-            frame_img = Image.new("RGBA", (w, h), (35, 55, 35, 255))
-            draw = ImageDraw.Draw(frame_img)
-            for gx in range(0, w, 64):
-                for gy in range(0, h, 64):
-                    draw.rectangle([gx, gy, gx + 62, gy + 62], fill=(40, 65, 40, 255))
-
-            if base1: frame_img.paste(base1, (80, h // 2 - 55), base1)
-            if base2: frame_img.paste(base2, (w - 200, h // 2 - 55), base2)
-
-            progress = i / float(total_frames)
-            draw.rectangle([w // 2 - 15, h // 2 - 15, w // 2 + 15, h // 2 + 15], fill=(0, 200, 255, 255))
-
-            ux = int(190 + progress * (w // 2 - 205))
-            uy = h // 2
-            draw.ellipse([ux-8, uy-8, ux+8, uy+8], fill=(255, 50, 50, 255))
-
-            # HUD
-            draw.rectangle([0, h - 40, w, h], fill=(20, 20, 30, 255))
-            gold = int(750 + progress * 200)
-            draw.text((20, h - 30), f"GOLD: {gold}   WOOD: 400   UNITS: 15/50", fill=(255, 215, 0, 255))
-
-            if writer:
-                writer.append_data(np.array(frame_img.convert("RGB")))
-            del frame_img
-            if i % 10 == 0: gc.collect()
-
-    elif is_tower_defense:
-        total_frames = 150
-        player_sprite = best_assets.get("player")
-        enemy_sprite = best_assets.get("enemy")
-        tower = remove_flat_background(player_sprite).resize((70, 70), Image.NEAREST).convert("RGBA") if player_sprite else None
-        minion = remove_flat_background(enemy_sprite).resize((50, 50), Image.NEAREST).convert("RGBA") if enemy_sprite else None
-
-        for i in range(total_frames):
-            frame_img = Image.new("RGBA", (w, h), (35, 30, 25, 255))
-            draw = ImageDraw.Draw(frame_img)
-            path_pts = [(0, 180), (140, 180), (140, 80), (320, 80), (320, 280), (480, 280), (480, 180), (w, 180)]
-            for p_idx in range(len(path_pts)-1):
-                draw.line([path_pts[p_idx], path_pts[p_idx+1]], fill=(120, 110, 100, 255), width=32)
-                draw.line([path_pts[p_idx], path_pts[p_idx+1]], fill=(160, 150, 140, 255), width=24)
-
-            if tower:
-                frame_img.paste(tower, (80, 70), tower)
-                frame_img.paste(tower, (240, 120), tower)
-
-            progress = i / float(total_frames)
-            if progress < 0.33:
-                seg_prog = progress / 0.33
-                ex = int(0 + seg_prog * 140)
-                ey = 180
-            elif progress < 0.66:
-                seg_prog = (progress - 0.33) / 0.33
-                ex = 140
-                ey = int(180 - seg_prog * 100)
-            else:
-                seg_prog = (progress - 0.66) / 0.34
-                ex = int(140 + seg_prog * 180)
-                ey = 80
-
-            if minion:
-                frame_img.paste(minion, (ex-25, ey-25), minion)
-
-            if 0.2 < progress < 0.8:
-                draw.line([115, 105, ex, ey], fill=(255, 50, 50, 255), width=3)
-                draw.ellipse([ex-6, ey-6, ex+6, ey+6], fill=(255, 255, 100, 255))
-
-            # HUD
-            draw.rectangle([10, 10, 200, 50], fill=(20, 20, 20, 220), outline=(0, 200, 255, 255), width=2)
-            draw.text((20, 16), "WAVE: 3/10", fill=(0, 200, 255, 255))
-            gold = int(250 + progress * 50)
-            draw.text((20, 30), f"HEALTH: 20  GOLD: {gold}", fill=(255, 255, 255, 255))
-
-            if writer:
-                writer.append_data(np.array(frame_img.convert("RGB")))
-            del frame_img
-            if i % 10 == 0: gc.collect()
-
-    elif is_running:
-        total_frames = 150
-        player_sprite = best_assets.get("player")
-        enemy_sprite = best_assets.get("enemy")
-        runner = remove_flat_background(player_sprite).resize((110, 110), Image.NEAREST).convert("RGBA") if player_sprite else None
-        obstacle = remove_flat_background(enemy_sprite).resize((70, 70), Image.NEAREST).convert("RGBA") if enemy_sprite else None
-
-        bg_asset = best_assets.get("background")
-        if bg_asset:
-            clean_bg = bg_asset.resize((w, h), Image.LANCZOS).convert("RGBA")
-        else:
-            clean_bg = draw_parallax_sky(w, h, game_plan).convert("RGBA")
-
-        for i in range(total_frames):
-            frame_img = clean_bg.copy()
-            draw = ImageDraw.Draw(frame_img)
-            
-            offset = (i * 12) % 60
-            for lx in range(-60 + offset, w + 60, 60):
-                draw.line([lx, 160, lx + 30, 160], fill=(255, 255, 255, 120), width=3)
-                draw.line([lx, 280, lx + 30, 280], fill=(255, 255, 255, 120), width=3)
-
-            progress = i / float(total_frames)
-            
-            if progress < 0.3:
-                ry = 180
-            elif progress < 0.6:
-                t = (progress - 0.3) / 0.3
-                ry = int(180 - t * 120)
-            elif progress < 0.8:
-                ry = 60
-            else:
-                t = (progress - 0.8) / 0.2
-                ry = int(60 + t * 120)
-
-            ox = int(w * 1.1 - progress * (w * 1.3))
-
-            if obstacle:
-                frame_img.paste(obstacle, (ox, 180), obstacle)
-
-            if runner:
-                frame_img.paste(runner, (80, ry), runner)
-
-            # HUD
-            draw.rectangle([10, 10, 220, 45], fill=(10, 10, 10, 200))
-            dist = int(progress * 500)
-            draw.text((20, 16), f"DISTANCE: {dist:04}m  x1.2", fill=(0, 255, 100, 255))
-
-            if writer:
-                writer.append_data(np.array(frame_img.convert("RGB")))
-            del frame_img
-            if i % 10 == 0: gc.collect()
-
-    else:
-        total_frames = 150
-        platforms = layout_json.get("platforms", [[0, 11]])
-        all_x = [p[0] for p in platforms]
-        all_y = [p[1] for p in platforms]
-        min_x, max_x = min(all_x), max(all_x)
-        min_y, max_y = min(all_y), max(all_y)
-        grid_w, grid_h = max_x - min_x + 1, max_y - min_y + 1
-
-        scale = min(w / (grid_w * tile_size), h / (grid_h * tile_size), 1.0)
-        ts = max(int(tile_size * scale), 6)
-        sprite_w, sprite_h = ts * 2, ts * 2
-
-        player_sprite = best_assets.get("player")
-        enemy_sprite = best_assets.get("enemy")
-        p_img = remove_flat_background(player_sprite).resize((sprite_w, sprite_h), Image.NEAREST).convert("RGBA") if player_sprite else None
-        e_img = remove_flat_background(enemy_sprite).resize((sprite_w, sprite_h), Image.NEAREST).convert("RGBA") if enemy_sprite else None
-
-        path_coords = path if path else layout_json.get("platforms", [])[:10]
-        if not path_coords:
-            path_coords = [(1, 10), (2, 10), (3, 10)]
-
-        for i in range(total_frames):
-            frame_img = base_img.copy()
-            idx = int((i / total_frames) * len(path_coords)) % len(path_coords)
-            curr_pos = path_coords[idx]
-
-            px_scr = int((curr_pos[0] - min_x) * ts)
-            py_scr = int((curr_pos[1] - min_y) * ts) - ts
-
-            jump_offset = 0
-            for ex, ey in layout_json.get("enemies", []):
-                ex_scr = int((ex - min_x) * ts)
-                if abs(px_scr - ex_scr) < 80:
-                    t_jump = max(0, min(1.0, 1.0 - abs(px_scr - ex_scr) / 80.0))
-                    jump_offset = int(math.sin(t_jump * math.pi) * (ts * 2))
-
-            py_scr -= jump_offset
-
-            px_scr = max(0, min(w - sprite_w, px_scr))
-            py_scr = max(0, min(h - sprite_h, py_scr))
-
-            if p_img:
-                frame_img.paste(p_img, (px_scr, py_scr), p_img)
-
-            if e_img:
-                for ex, ey in layout_json.get("enemies", [])[:5]:
-                    ex_scr = int((ex - min_x) * ts) + int(math.sin(i * 0.1) * 8)
-                    ey_scr = int((ey - min_y) * ts) - ts
-                    ex_scr = max(0, min(w - sprite_w, ex_scr))
-                    ey_scr = max(0, min(h - sprite_h, ey_scr))
-                    frame_img.paste(e_img, (ex_scr, ey_scr), e_img)
-
-            if writer:
-                writer.append_data(np.array(frame_img.convert("RGB")))
-            del frame_img
-            if i % 10 == 0: gc.collect()
-
-    if writer:
+    genre_lower = (game_plan.get("genre", "") if game_plan else "").lower()
+
+    is_racing    = "rac" in genre_lower
+    is_fighting  = "fight" in genre_lower or "arena" in genre_lower
+    is_strategy  = "strategy" in genre_lower
+    is_tower     = "tower" in genre_lower or "defense" in genre_lower
+    is_running   = "run" in genre_lower
+
+    # Use a smaller canvas to prevent OOM on limited RAM servers
+    vp_w, vp_h = 640, 360
+    base_img = scene.convert("RGBA").resize((vp_w, vp_h), Image.BILINEAR)
+    w, h = vp_w, vp_h
+
+    writer, video_mode = _try_init_video_writer(output_path, fps=fps)
+    # For GIF, halve framerate to reduce file size
+    gif_every = 2 if video_mode == "gif" else 1
+
+    def _write_frame(frame_img, frame_idx):
+        """Safely append a frame, converting to RGB if needed."""
+        if writer is None:
+            return
         try:
-            writer.close()
-        except Exception as e:
-            print(f"Video render note: {e}")
+            if frame_idx % gif_every != 0:
+                return
+            rgb = frame_img.convert("RGB")
+            writer.append_data(np.array(rgb))
+        except Exception as fe:
+            print(f"[Video] Frame {frame_idx} write error: {fe}")
+
+    try:
+        if is_fighting:
+            # ── Fighting: choreographed 2-character battle ──────────────────
+            total_frames = 120
+            p1_base_x = int(w * 0.18)
+            p2_base_x = int(w * 0.58)
+            y_ground   = int(h * 0.44)
+
+            bg = best_assets.get("background")
+            clean_bg = bg.resize((w, h), Image.LANCZOS).convert("RGBA") if bg else base_img.copy()
+
+            p_spr = best_assets.get("player")
+            e_spr = best_assets.get("enemy")
+            spr_sz = 140
+            p1_img = remove_flat_background(p_spr).resize((spr_sz, spr_sz), Image.LANCZOS).convert("RGBA") if p_spr else None
+            p2_img = remove_flat_background(e_spr).resize((spr_sz, spr_sz), Image.LANCZOS).convert("RGBA") if e_spr else None
+            if p2_img:
+                p2_img = p2_img.transpose(Image.FLIP_LEFT_RIGHT)
+
+            for i in range(total_frames):
+                frame = clean_bg.copy()
+                drw = ImageDraw.Draw(frame)
+
+                t = i / total_frames
+                p1_hp = max(80, int(100 - t * 20))
+                p2_hp = max(0,  int(100 - t * 110))
+                p1_x = p1_base_x + int(math.sin(t * math.pi * 2) * 18)
+                p1_y = y_ground  - int(abs(math.sin(t * math.pi * 4)) * 30)
+                p2_x = p2_base_x + int(math.sin(t * math.pi * 2 + 1) * 12)
+                p2_y = y_ground
+
+                # Hit spark when p2_hp drops
+                if 0.35 < t < 0.65 and int(t * 60) % 6 < 3:
+                    sx, sy = (p1_x + p2_x)//2, y_ground + 20
+                    drw.ellipse([sx-20, sy-20, sx+20, sy+20], fill=(255, 240, 60, 200))
+                    drw.ellipse([sx-10, sy-10, sx+10, sy+10], fill=(255, 255, 255, 220))
+
+                _draw_fighting_hud(drw, w, h, game_plan, p1_hp=p1_hp, p2_hp=p2_hp)
+
+                if p1_img: frame.paste(p1_img, (p1_x, p1_y), p1_img)
+                if p2_img: frame.paste(p2_img, (p2_x, p2_y), p2_img)
+
+                if t > 0.85:
+                    drw.text((w//2 - 30, h//2), "K.O.!", fill=(255, 50, 50, 255))
+
+                _write_frame(frame, i)
+                del frame, drw
+                if i % 15 == 0:
+                    gc.collect()
+
+        elif is_racing:
+            # ── Racing: scrolling road with cars ────────────────────────────
+            total_frames = 100
+            road_tile = best_assets.get("platform_tile")
+            car_spr   = best_assets.get("player")
+            rival_spr = best_assets.get("enemy")
+
+            road_img = road_tile.resize((w, 180), Image.LANCZOS).convert("RGBA") if road_tile else None
+            car_img  = remove_flat_background(car_spr).resize((160, 80),  Image.LANCZOS).convert("RGBA") if car_spr  else None
+            rival_img= remove_flat_background(rival_spr).resize((140, 70), Image.LANCZOS).convert("RGBA") if rival_spr else None
+
+            for i in range(total_frames):
+                frame = base_img.copy()
+                drw = ImageDraw.Draw(frame)
+
+                # Scrolling road lines
+                road_y = h // 2
+                drw.rectangle([0, road_y, w, h], fill=(42, 44, 52, 255))
+                scroll = (i * 18) % 120
+                for lx in range(-120 + scroll, w + 120, 120):
+                    drw.rectangle([lx, road_y + 50, lx + 60, road_y + 58], fill=(240, 200, 0, 255))
+                # Edge lines
+                drw.rectangle([0, road_y + 2, w, road_y + 6], fill=(255, 255, 255, 220))
+                drw.rectangle([0, h - 6, w, h], fill=(255, 255, 255, 220))
+
+                # Road texture tile
+                if road_img:
+                    for tx in range(0, w, w):
+                        frame.paste(road_img, (tx, road_y), road_img)
+
+                # Rival car (ahead)
+                rival_x = int(w * 0.55) + int(math.sin(i * 0.08) * 22)
+                if rival_img:
+                    frame.paste(rival_img, (rival_x, road_y + 20), rival_img)
+
+                # Player car
+                player_x = int(w * 0.15)
+                player_y = road_y + 40
+                if car_img:
+                    frame.paste(car_img, (player_x, player_y), car_img)
+
+                # Speed lines
+                speed = int(20 + i * 1.2)
+                drw.text((w - 180, h - 50), f"SPEED: {speed} km/h", fill=(0, 255, 240, 255))
+                drw.text((w - 180, h - 30), f"LAP  : {1 + i // 50}/3",    fill=(255, 215, 0,  255))
+
+                _write_frame(frame, i)
+                del frame, drw
+                if i % 15 == 0:
+                    gc.collect()
+
+        elif is_running:
+            # ── Infinite runner: scrolling obstacles ──────────────────────
+            total_frames = 90
+            runner_spr   = best_assets.get("player")
+            obstacle_spr = best_assets.get("enemy")
+            tile_spr     = best_assets.get("platform_tile")
+
+            runner_img  = remove_flat_background(runner_spr).resize((80, 120),  Image.LANCZOS).convert("RGBA") if runner_spr else None
+            obs_img     = remove_flat_background(obstacle_spr).resize((60, 90), Image.LANCZOS).convert("RGBA") if obstacle_spr else None
+            ground_img  = tile_spr.resize((w, 60), Image.LANCZOS).convert("RGBA") if tile_spr else None
+
+            ground_y = int(h * 0.72)
+
+            for i in range(total_frames):
+                frame = base_img.copy()
+                drw = ImageDraw.Draw(frame)
+                drw.rectangle([0, ground_y, w, h], fill=(48, 50, 58, 255))
+                if ground_img:
+                    frame.paste(ground_img, (0, ground_y), ground_img)
+
+                # Obstacles scrolling in
+                for ob_idx in range(3):
+                    ox = (w - (i * 14 + ob_idx * 280)) % (w + 80) - 80
+                    if obs_img and ox > -80:
+                        frame.paste(obs_img, (ox, ground_y - 80), obs_img)
+
+                # Runner with bounce
+                ry = ground_y - 120 - int(abs(math.sin(i * 0.25)) * 45)
+                if runner_img:
+                    frame.paste(runner_img, (int(w * 0.18), ry), runner_img)
+
+                score = i * 12
+                drw.text((16, 16), f"SCORE: {score}", fill=(255, 255, 255, 255))
+                drw.text((16, 36), f"DIST:  {score}m", fill=(200, 220, 255, 200))
+
+                _write_frame(frame, i)
+                del frame, drw
+                if i % 15 == 0:
+                    gc.collect()
+
+        elif is_strategy or is_tower:
+            # ── Strategy/TD: overhead map with units moving ───────────────
+            total_frames = 90
+            bg_spr  = best_assets.get("background")
+            unit    = best_assets.get("player")
+            enemy   = best_assets.get("enemy")
+
+            bg_img   = bg_spr.resize((w, h), Image.LANCZOS).convert("RGBA") if bg_spr else base_img.copy()
+            unit_img = remove_flat_background(unit).resize((48, 48),  Image.LANCZOS).convert("RGBA") if unit  else None
+            en_img   = remove_flat_background(enemy).resize((44, 44), Image.LANCZOS).convert("RGBA") if enemy else None
+
+            for i in range(total_frames):
+                frame = bg_img.copy()
+                drw = ImageDraw.Draw(frame)
+
+                # Grid overlay
+                for gx in range(0, w, 64):
+                    drw.line([gx, 0, gx, h], fill=(255, 255, 255, 25), width=1)
+                for gy in range(0, h, 64):
+                    drw.line([0, gy, w, gy], fill=(255, 255, 255, 25), width=1)
+
+                # Units marching along path
+                t = i / total_frames
+                for u_idx in range(4):
+                    ux = int(w * (0.1 + u_idx * 0.22 + t * 0.3)) % w
+                    uy = int(h * (0.5 + math.sin(t * math.pi * 2 + u_idx) * 0.15))
+                    if unit_img:
+                        frame.paste(unit_img, (ux, uy), unit_img)
+
+                # Enemy base
+                for e_idx in range(3):
+                    ex = int(w * (0.65 + e_idx * 0.1))
+                    ey = int(h * (0.3 + e_idx * 0.15))
+                    if en_img:
+                        frame.paste(en_img, (ex, ey), en_img)
+
+                wave = 1 + i // 30
+                drw.text((16, 16), f"WAVE: {wave}",       fill=(255, 80, 80,   255))
+                drw.text((16, 36), f"GOLD: {200 + i*3}", fill=(255, 200, 0,   255))
+
+                _write_frame(frame, i)
+                del frame, drw
+                if i % 15 == 0:
+                    gc.collect()
+
+        else:
+            # ── Default: platformer side-scroller ─────────────────────────
+            total_frames = 100
+            ts = tile_size
+            platforms = layout_json.get("platforms", [])
+            enemies_pos = layout_json.get("enemies", [])
+
+            if not platforms:
+                platforms = [[c, 11] for c in range(24)] + [[3,8],[4,8],[8,6],[14,5],[19,4],[20,4]]
+
+            all_x = [p[0] for p in platforms]
+            all_y = [p[1] for p in platforms]
+            min_x = min(all_x) if all_x else 0
+            min_y = min(all_y) if all_y else 0
+            max_x = max(all_x) if all_x else 23
+
+            world_w = max(1, (max_x - min_x + 2) * ts)
+            ts_scaled = max(ts, int(w / max(1, max_x - min_x + 2)))
+
+            tile_spr = best_assets.get("platform_tile")
+            p_spr    = best_assets.get("player")
+            e_spr    = best_assets.get("enemy")
+            bg_spr   = best_assets.get("background")
+
+            bg_img   = bg_spr.resize((w, h), Image.LANCZOS).convert("RGBA") if bg_spr else base_img.copy()
+            tile_img = tile_spr.resize((ts_scaled, ts_scaled), Image.NEAREST).convert("RGBA") if tile_spr else None
+            sprite_w = max(40, ts_scaled)
+            sprite_h = max(56, int(ts_scaled * 1.4))
+            p_img    = remove_flat_background(p_spr).resize((sprite_w, sprite_h), Image.LANCZOS).convert("RGBA") if p_spr else None
+            e_img    = remove_flat_background(e_spr).resize((sprite_w, sprite_h), Image.LANCZOS).convert("RGBA") if e_spr else None
+
+            player_pos = layout_json.get("player", [1, 10])
+
+            for i in range(total_frames):
+                cam_scroll = int(i * (world_w / total_frames))
+                frame = bg_img.copy()
+                drw = ImageDraw.Draw(frame)
+
+                # Draw platforms
+                if tile_img:
+                    for px_t, py_t in platforms:
+                        tx = (px_t - min_x) * ts_scaled - cam_scroll
+                        ty = (py_t - min_y) * ts_scaled
+                        if -ts_scaled < tx < w:
+                            frame.paste(tile_img, (tx, ty), tile_img)
+
+                # Draw enemies (patrol bob)
+                if e_img:
+                    for ex, ey in enemies_pos[:4]:
+                        ex_scr = (ex - min_x) * ts_scaled - cam_scroll + int(math.sin(i * 0.12) * 10)
+                        ey_scr = (ey - min_y) * ts_scaled - sprite_h
+                        if -sprite_w < ex_scr < w:
+                            frame.paste(e_img, (ex_scr, ey_scr), e_img)
+
+                # Draw player (walks with camera)
+                px_scr = int(w * 0.25)
+                py_scr = (player_pos[1] - min_y) * ts_scaled - sprite_h - int(abs(math.sin(i * 0.18)) * 12)
+                py_scr = max(0, min(h - sprite_h, py_scr))
+                if p_img:
+                    frame.paste(p_img, (px_scr, py_scr), p_img)
+
+                _write_frame(frame, i)
+                del frame, drw
+                if i % 15 == 0:
+                    gc.collect()
+
+    except Exception as vid_err:
+        print(f"[Video] Generation error: {vid_err}")
+    finally:
+        if writer is not None:
+            try:
+                writer.close()
+                print("[Video] Writer closed successfully.")
+            except Exception as close_err:
+                print(f"[Video] Writer close error: {close_err}")
+
 
 # --------------------------------------------------------------------------
 # Pipeline Execution Endpoint Engine
@@ -2237,12 +2557,23 @@ def run_full_pipeline(image_path, user_description="Create a game based on the p
     scene_path = os.path.join(job_dir, "scene.png")
     scene.save(scene_path)
 
+    # Generate preview video (MP4 preferred, GIF fallback on servers without ffmpeg)
+    preview_mp4 = os.path.join(job_dir, "preview.mp4")
+    preview_gif = os.path.join(job_dir, "preview.gif")
+    preview_path = preview_mp4
+    set_job_status(job_id, "Rendering gameplay preview video...", 98, "Creating animated preview (MP4 or GIF)")
     try:
-        set_job_status(job_id, "Rendering H.264 gameplay preview video...", 98, "Generating H.264 animation sequence")
-        preview_path = os.path.join(job_dir, "preview.mp4")
-        generate_preview_video(scene, layout, path, best_assets, preview_path, game_plan=game_plan)
+        generate_preview_video(scene, layout, path, best_assets, preview_mp4, game_plan=game_plan)
     except Exception as e:
         print(f"Preview video generation note: {e}")
+    # Determine which file was actually created
+    if not os.path.exists(preview_mp4) or os.path.getsize(preview_mp4) < 1024:
+        if os.path.exists(preview_gif) and os.path.getsize(preview_gif) > 1024:
+            preview_path = preview_gif
+            print("[Video] Using GIF preview fallback.")
+        else:
+            preview_path = None
+    print(f"[Video] Preview file: {preview_path}")
 
     zip_filename = f"game_assets_{job_id}.zip"
     zip_path = os.path.join(job_dir, zip_filename)
@@ -2269,8 +2600,9 @@ def run_full_pipeline(image_path, user_description="Create a game based on the p
         "florence_caption": florence_caption,
         "florence_od": florence_od,
         "urls": {
-            "scene": f"/files/{job_id}/scene.png?v={ts}",
-            "preview": f"/files/{job_id}/preview.mp4?v={ts}",
+            "scene":   f"/files/{job_id}/scene.png?v={ts}",
+            "preview": (f"/files/{job_id}/{os.path.basename(preview_path)}?v={ts}"
+                        if preview_path else None),
         },
         "zip_url": f"/files/{job_id}/{zip_filename}?v={ts}"
     }
