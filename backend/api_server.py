@@ -711,6 +711,7 @@ field - title, theme, description, assets, video_prompt - purely around the reso
 Never blend a contradicting sketch subject into the theme (e.g. do not invent a "car fighter"
 or give a fighting-game character a vehicle). Only use the sketch/caption for genre-consistent
 details (layout, mood, color, setting) when they do not conflict with the resolved genre.
+If the VISUAL GENRE EVIDENCE contains a note about a conflict (e.g. user requested Fighting but sketch is Racing), YOU MUST COMPLETELY IGNORE the detected sketch objects, caption, and visual layout. Do NOT attempt to combine them (e.g. do not make a "car fighting" game). Strictly output a standard layout matching the user's requested genre.
 
 CRITICAL - SHORT PROMPT RULE: The user prompt may be very short or casual (e.g. "fun shooting
 game", "make it a cool racer"). Treat that as a complete, confident creative brief, not a reason
@@ -2449,6 +2450,10 @@ def compose_scene(best_assets, layout_json, game_plan, tile_size=32, canvas_widt
         return render_platformer(best_assets, layout_json, game_plan, tile_size, canvas_width, canvas_height, include_sprites)
 
 def validate_playability(layout_json, max_jump_height=4, max_jump_width=5):
+    genre = layout_json.get("genre", "action").lower()
+    if genre not in ["platformer", "running", "adventure", "dungeon"]:
+        return True, [], {"status": "PERFECT", "message": "Genre does not require jump pathfinding"}
+
     platforms = set(tuple(p) for p in layout_json.get("platforms", []))
     player = tuple(layout_json.get("player", [0, 0]))
     goal = tuple(layout_json.get("goal", [0, 0]))
@@ -3034,8 +3039,9 @@ def run_full_pipeline(image_path, user_description="Create a game based on the p
     preview_gif = os.path.join(job_dir, "preview.gif")
     preview_path = preview_mp4
     set_job_status(job_id, "Rendering gameplay preview video...", 98, "Creating animated preview (MP4 or GIF)")
+    clean_bg = compose_scene(best_assets, layout, game_plan, include_sprites=False)
     try:
-        generate_preview_video(scene, layout, path, best_assets, preview_mp4, game_plan=game_plan)
+        generate_preview_video(clean_bg, layout, path, best_assets, preview_mp4, game_plan=game_plan)
     except Exception as e:
         print(f"Preview video generation note: {e}")
     # Determine which file was actually created
