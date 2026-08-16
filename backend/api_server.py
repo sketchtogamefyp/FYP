@@ -1787,8 +1787,8 @@ def generate_all_assets(game_plan, save_dir, job_id=None):
         elif is_racing:
             BASE = "modern racing game art style, high-fidelity 3D-rendered look"
             PROMPTS = {
-                "player":        f"{quality_prefix(BASE)}, red supercar racing vehicle, side view, aerodynamic body, chrome rims, LED headlights, bold livery",
-                "enemy":         f"{quality_prefix(BASE)}, blue rival sports car, side view, sleek aerodynamic body, aggressive bumper, glowing tail lights",
+                "player":        f"{quality_prefix(BASE)}, red supercar racing vehicle, rear view, driving away into the distance, facing forward, aerodynamic body, chrome rims, LED headlights",
+                "enemy":         f"{quality_prefix(BASE)}, blue rival sports car, rear view, driving away into the distance, facing forward, sleek aerodynamic body, aggressive bumper",
                 "platform_tile": f"{quality_prefix('racing game')}, asphalt race track tile, yellow dashed center line, grip surface texture, top-down view",
                 "background":    f"cyberpunk night city racing panorama, neon lit skyline, rain-wet road reflections, motion blur lights, ultra wide game background, 16:9",
             }
@@ -2720,8 +2720,11 @@ def generate_preview_video(bg_img, layout, path, assets, output_path, game_plan=
                 # Player HP
                 draw.rectangle([20, 20, W//2 - 20, 40], fill=(50,0,0,255), outline=(255,255,255,255))
                 draw.rectangle([20, 20, W//2 - 20, 40], fill=(255,200,0,255)) # full
-                # Enemy HP
-                enemy_hp = max(0, 1.0 - (i / TOTAL_FRAMES))
+                # Enemy HP - Chunked damage
+                completed_cycles = i // 120
+                current_cycle = i % 120
+                damage = (completed_cycles * 0.3) + (0.3 if current_cycle > 35 else 0)
+                enemy_hp = max(0, 1.0 - damage)
                 draw.rectangle([W//2 + 20, 20, W - 20, 40], fill=(50,0,0,255), outline=(255,255,255,255))
                 draw.rectangle([W - 20 - int((W//2-40)*enemy_hp), 20, W - 20, 40], fill=(255,0,0,255))
                 
