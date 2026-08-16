@@ -1787,8 +1787,8 @@ def generate_all_assets(game_plan, save_dir, job_id=None):
         elif is_racing:
             BASE = "modern racing game art style, high-fidelity 3D-rendered look"
             PROMPTS = {
-                "player":        f"{quality_prefix(BASE)}, red supercar racing vehicle, rear view, driving away into the distance, facing forward, aerodynamic body, chrome rims, LED headlights",
-                "enemy":         f"{quality_prefix(BASE)}, blue rival sports car, rear view, driving away into the distance, facing forward, sleek aerodynamic body, aggressive bumper",
+                "player":        f"{quality_prefix(BASE)}, red supercar racing vehicle, side view, aerodynamic body, chrome rims, LED headlights, bold livery",
+                "enemy":         f"{quality_prefix(BASE)}, blue rival sports car, side view, sleek aerodynamic body, aggressive bumper, glowing tail lights",
                 "platform_tile": f"{quality_prefix('racing game')}, asphalt race track tile, yellow dashed center line, grip surface texture, top-down view",
                 "background":    f"cyberpunk night city racing panorama, neon lit skyline, rain-wet road reflections, motion blur lights, ultra wide game background, 16:9",
             }
@@ -2633,48 +2633,32 @@ def generate_preview_video(bg_img, layout, path, assets, output_path, game_plan=
             
             # --- 1. RACING ---
             if genre == "racing":
-                # Mode-7 Style 3D Road
-                horizon = int(H * 0.5)
-                # Draw ground
-                draw.rectangle([0, horizon, W, H], fill=(40, 40, 45, 255))
-                # Road perspective lines
-                road_w_bottom = W * 0.8
-                road_w_top = W * 0.2
-                road_pts = [(W/2 - road_w_top/2, horizon), (W/2 + road_w_top/2, horizon), 
-                            (W/2 + road_w_bottom/2, H), (W/2 - road_w_bottom/2, H)]
-                draw.polygon(road_pts, fill=(60, 60, 65, 255))
+                # Side-Scrolling 2D Race Track
+                road_y = int(H * 0.75)
+                draw.rectangle([0, road_y, W, H], fill=(40, 40, 45, 255))
                 
-                # Moving dashed lines
-                offset = (i * 0.5) % 1.0
-                for strip in range(5):
-                    z1 = (strip + offset) / 5.0
-                    z2 = (strip + offset + 0.5) / 5.0
-                    if z1 > 1.0: continue
-                    z2 = min(z2, 1.0)
-                    
-                    # Perspective projection
-                    y1 = horizon + (H - horizon) * (z1**2)
-                    y2 = horizon + (H - horizon) * (z2**2)
-                    w1 = road_w_top + (road_w_bottom - road_w_top) * (z1**2)
-                    w2 = road_w_top + (road_w_bottom - road_w_top) * (z2**2)
-                    draw.polygon([(W/2-2, y1), (W/2+2, y1), (W/2+4, y2), (W/2-4, y2)], fill=(255,200,0,255))
+                # Parallax road stripes (moving right to left)
+                stripe_offset = (i * 15) % 100
+                for stripe in range(-1, int(W/100) + 2):
+                    sx = stripe * 100 - stripe_offset
+                    draw.rectangle([sx, road_y + 20, sx + 40, road_y + 25], fill=(255,200,0,255))
                 
-                # Cars
-                # Player car steering
-                steer = math.sin(i * 0.05)
-                car_x = int(W*0.5 + steer * W*0.2)
-                car_y = int(H*0.8)
+                # Camera parallax bg
+                cam_x_bg = (i * 3) % W
+                frame.paste(base_bg, (-cam_x_bg, 0))
+                frame.paste(base_bg, (W - cam_x_bg, 0))
+                
+                # Player car
+                car_x = int(W * 0.3)
+                car_y = road_y + 35
                 
                 # Rival car overtaking and falling behind
-                rival_z = (i * 0.02) % 2.0
-                if rival_z > 1.0: rival_z = 2.0 - rival_z # yo-yo effect
-                rival_y = int(horizon + (H - horizon) * (rival_z**2))
-                rival_scale = 0.3 + 0.7 * (rival_z**2)
+                rival_progress = math.sin(i * 0.05)
+                rival_x = int(W * 0.6) + int(rival_progress * W * 0.4)
+                rival_y = road_y + 5 # Slightly deeper in the z-axis
                 
                 if enemy_img:
-                    scaled_e = enemy_img.resize((int(enemy_img.width * rival_scale), int(enemy_img.height * rival_scale)), Image.LANCZOS)
-                    rival_x = int(W*0.5 - W*0.15 * rival_scale)
-                    frame.paste(scaled_e, (rival_x - scaled_e.width//2, rival_y - scaled_e.height), scaled_e if scaled_e.mode == 'RGBA' else None)
+                    frame.paste(enemy_img, (rival_x - enemy_img.width//2, rival_y - enemy_img.height), enemy_img if enemy_img.mode == 'RGBA' else None)
                     
                 if player_img:
                     frame.paste(player_img, (car_x - player_img.width//2, car_y - player_img.height), player_img if player_img.mode == 'RGBA' else None)
@@ -2682,7 +2666,7 @@ def generate_preview_video(bg_img, layout, path, assets, output_path, game_plan=
                 # UI HUD
                 draw.rectangle([W-120, 20, W-20, 70], fill=(0,0,0,150), outline=(255,255,255,255))
                 draw.text((W-110, 25), "LAP: 2/3", fill=(255,255,255,255))
-                draw.text((W-110, 45), f"SPEED: {int(120 + abs(steer)*20)} km/h", fill=(0,255,0,255))
+                draw.text((W-110, 45), f"SPEED: 180 km/h", fill=(0,255,0,255))
                 
             # --- 2. FIGHTING / ADVENTURE FIGHTING ---
             elif genre == "fighting":
@@ -2929,9 +2913,15 @@ def generate_preview_video(bg_img, layout, path, assets, output_path, game_plan=
                 if player_img:
                     frame.paste(player_img, (p_base_x - player_img.width//2, p_y - player_img.height), player_img if player_img.mode == 'RGBA' else None)
                     
-                # Enemy Patrol
+                # Enemy Patrol synced with jump cycle so player jumps perfectly over them
                 for e_idx in range(3):
-                    e_world_x = W + (e_idx * 300) - int(cam_x * 0.8)
+                    # Enemy crosses p_base_x when jump_cycle = 0.3 (peak of jump)
+                    # p_base_x is at W*0.3. Jump cycle length is 50 frames.
+                    # This guarantees the player is high in the air when the enemy passes!
+                    cycle_start_frame = e_idx * 50
+                    progress = (i - cycle_start_frame) / 50.0
+                    e_world_x = W - int(progress * W) + int(W * 0.3)
+                    
                     if 0 < e_world_x < W:
                         e_y = floor_y - int(math.sin(i*0.5)*10) # Bobbing
                         if enemy_img:
