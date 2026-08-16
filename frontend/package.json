@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "homepage": "https://sheikh-hr.github.io/FYP",
+  "homepage": "https://sketchtogamefyp.github.io/FYP",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
