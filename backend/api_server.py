@@ -5,6 +5,7 @@ Sketch-to-Game pipeline API.
 import gc
 import json
 import os
+import re
 import uuid
 import math
 import random
@@ -489,6 +490,106 @@ def sketch_to_layout(image_path):
     return layout, raw_caption, raw_od, vision_info
 
 
+def _kw_hit(keyword, text):
+    """
+    Word-boundary keyword match. Plain 'in' substring checks were matching
+    short keywords like 'car' inside unrelated words ('cartoon', 'carnage',
+    'scary'), 'td' inside 'outdoor', 'base' inside 'basement', etc. This was
+    silently hijacking genre resolution (e.g. a fighting-game description
+    that happened to contain the word "carnage" would resolve to "racing").
+    re.escape + \\b boundaries keep multi-word phrases ("beat 'em up") working
+    while eliminating those false positives.
+    """
+    pattern = r"(?<!\w)" + re.escape(keyword) + r"(?!\w)"
+    return re.search(pattern, text) is not None
+
+
+# --------------------------------------------------------------------------
+# Single source of truth for supported genres and their keyword synonyms.
+# Used for BOTH text-prompt matching and visual-caption matching below, so
+# the two can never drift out of sync (previously "shooting" was added to
+# one list and not the other, which is part of why it never resolved).
+# Every genre listed here must also have: a genre_specific template in
+# GAME_PLAN_SYSTEM_PROMPT, asset prompts in generate_all_assets, a
+# render_<genre> function wired into compose_scene, and an animation branch
+# in generate_preview_video.
+# --------------------------------------------------------------------------
+GENRE_KEYWORDS = {
+    "shooting": ["shooting", "shooter", "fps", "gun", "guns", "shoot", "sniper",
+                 "bullet", "gunner", "gunfight", "trigger", "reload", "warzone",
+                 "shootout", "shootemup", "run and gun", "space shooter",
+                 "third person shooter", "first person shooter", "battle royale",
+                 "gunslinger", "rifle", "pistol"],
+    "racing": ["racing", "race", "car", "cars", "drive", "driving", "track", "vehicle",
+               "kart", "supercar", "motorbike", "motorcycle", "motocross", "rally",
+               "grand prix", "speedway", "drift", "street race", "go kart"],
+    "fighting": ["fighting", "fight", "brawler", "combat", "arena", "beatemup",
+                 "beat 'em up", "smash", "martial arts", "boxing", "wrestling",
+                 "versus", "1v1", "duel", "kung fu", "showdown", "melee"],
+    "dungeon": ["dungeon", "crawler", "maze", "basement", "corridor", "roguelike",
+                "roguelite", "labyrinth", "catacomb", "crypt", "underground cave"],
+    "strategy": ["strategy", "rts", "base", "units", "territory", "build", "tactics",
+                 "civilization", "empire", "command post", "kingdom builder"],
+    "platformer": ["platformer", "mario", "jumping", "jump", "megaman", "sonic",
+                   "platform", "side scroller", "sidescroller", "obstacle course"],
+    "tower_defense": ["tower defense", "tower", "td", "defense", "defend the base",
+                       "waves of enemies"],
+    "running": ["running", "runner", "infinite run", "temple run", "subway surfers",
+                "endless runner", "parkour", "auto runner", "auto-runner"],
+    "adventure": ["adventure", "explore", "quest", "chest", "treasure", "forest",
+                  "rpg", "fantasy", "zelda", "open world", "point and click",
+                  "story driven"],
+    "puzzle": ["puzzle", "match 3", "match-3", "matching", "tile matching",
+               "sliding puzzle", "sokoban", "brain teaser", "block puzzle",
+               "jigsaw", "tetris"],
+    "sports": ["soccer", "football", "basketball", "baseball", "tennis", "hockey",
+               "sports game", "dribble", "penalty kick", "slam dunk", "sports"],
+}
+SUPPORTED_GENRES = list(GENRE_KEYWORDS.keys())
+
+
+def gpt_classify_genre(user_description, florence_caption, florence_od, vision_info):
+    """
+    Semantic fallback genre classifier - only called when NO keyword in
+    GENRE_KEYWORDS matched the prompt at all. This is what makes very short,
+    casual, or oddly-worded prompts ("make it fun", "something with a cool
+    boss") still resolve correctly: it feeds the prompt AND the sketch's
+    visual signals (caption, detected objects, scene) to GPT-4o-mini and asks
+    for a single best-fit genre from the supported list, instead of silently
+    falling back to a structural default. Cheap/fast model, tiny output,
+    wrapped so any failure just falls through to the existing heuristics.
+    """
+    try:
+        client = get_openai_client()
+        user_msg = (
+            f"USER PROMPT: {user_description}\n"
+            f"SKETCH CAPTION: {florence_caption or 'none'}\n"
+            f"DETECTED OBJECTS: {json.dumps((vision_info or {}).get('objects', [])[:10])}\n"
+            f"SCENE: {json.dumps((vision_info or {}).get('scene', {}))}\n\n"
+            f"Pick exactly one genre from this list that best matches BOTH the prompt and "
+            f"the sketch: {', '.join(SUPPORTED_GENRES)}.\n"
+            "Respond with ONLY the single genre word, lowercase, nothing else - no punctuation, "
+            "no explanation."
+        )
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a precise game-genre classifier. "
+                 "You only ever answer with one lowercase word from the given list."},
+                {"role": "user", "content": user_msg},
+            ],
+            temperature=0,
+            max_tokens=6,
+        )
+        raw = re.sub(r"[^a-z_]", "", response.choices[0].message.content.strip().lower())
+        if raw in SUPPORTED_GENRES:
+            return raw
+        print(f"[Genre] Semantic classifier returned unrecognized genre '{raw}', ignoring.")
+    except Exception as e:
+        print(f"[Genre] Semantic classification fallback failed: {e}")
+    return None
+
+
 def resolve_genre(user_description, florence_caption, florence_od, layout, vision_info):
     user_desc_lower = user_description.lower()
     
@@ -504,22 +605,19 @@ def resolve_genre(user_description, florence_caption, florence_od, layout, visio
         reason = "User requested a hybrid 'adventure fighting' genre; prioritizing combat mechanics."
         source = "user_instruction"
         confidence = 0.99
-    
+    elif "run and gun" in user_desc_lower or "run n gun" in user_desc_lower:
+        user_genre = "shooting"
+        reason = "User requested a hybrid 'run and gun' genre; prioritizing shooting mechanics."
+        source = "user_instruction"
+        confidence = 0.99
+
+    # 2. Explicit keyword match (fast path, no API call, matched with word
+    # boundaries via _kw_hit so short keywords can't false-positive on
+    # unrelated words).
     if not user_genre:
-        genre_keywords = {
-            "racing": ["racing", "race", "car", "drive", "driving", "track", "vehicle", "kart"],
-            "fighting": ["fighting", "fight", "brawler", "combat", "arena", "beatemup", "beat 'em up", "smash"],
-            "dungeon": ["dungeon", "crawler", "maze", "basement", "corridor", "roguelike"],
-            "strategy": ["strategy", "rts", "base", "units", "territory", "build", "tactics"],
-            "platformer": ["platformer", "mario", "jumping", "jump", "megaman", "sonic", "platform"],
-            "tower_defense": ["tower defense", "tower", "td", "defense"],
-            "running": ["running", "runner", "infinite run", "temple run", "subway surfers", "endless runner"],
-            "adventure": ["adventure", "explore", "quest", "chest", "treasure", "forest", "rpg", "fantasy", "zelda"]
-        }
-        
-        for g, keywords in genre_keywords.items():
+        for g, keywords in GENRE_KEYWORDS.items():
             for kw in keywords:
-                if kw in user_desc_lower:
+                if _kw_hit(kw, user_desc_lower):
                     user_genre = g
                     reason = f"User explicitly requested a genre matching keyword '{kw}'."
                     source = "user_instruction"
@@ -527,28 +625,29 @@ def resolve_genre(user_description, florence_caption, florence_od, layout, visio
                     break
             if user_genre:
                 break
-            
-    # 2. Visual Evidence Analysis
+
+    # 3. Semantic AI fallback - only reached when the prompt contains none of
+    # our keywords at all (e.g. "fun game please", "something cool", or a
+    # synonym we didn't anticipate). Combines prompt + sketch signals.
+    if not user_genre:
+        gpt_genre = gpt_classify_genre(user_description, florence_caption, florence_od, vision_info)
+        if gpt_genre:
+            user_genre = gpt_genre
+            reason = f"No explicit genre keyword in the prompt; AI classifier inferred '{gpt_genre}' from the prompt and sketch together."
+            source = "ai_semantic_classification"
+            confidence = 0.85
+
+    # 4. Visual Evidence Analysis (uses the same GENRE_KEYWORDS registry, so
+    # it can never disagree with the text matcher about what a keyword means)
     visual_evidence = vision_info.get("visual_genre_evidence", [])
     visual_candidates = []
-    # Using the same mapping for visual checking
-    genre_keywords_vis = {
-        "racing": ["racing", "race", "car", "drive", "driving", "track", "vehicle"],
-        "fighting": ["fighting", "fight", "brawler", "combat", "arena", "beatemup", "beat 'em up"],
-        "dungeon": ["dungeon", "crawler", "maze", "basement", "corridor"],
-        "strategy": ["strategy", "rts", "base", "units", "territory", "build"],
-        "platformer": ["platformer", "mario", "jumping", "jump"],
-        "tower_defense": ["tower defense", "tower", "td", "defense"],
-        "running": ["running", "runner", "infinite run"],
-        "adventure": ["adventure", "explore", "quest", "chest", "treasure", "forest", "rpg", "fantasy"]
-    }
     
-    for g, keywords in genre_keywords_vis.items():
+    for g, keywords in GENRE_KEYWORDS.items():
         score = 0.0
         for kw in keywords:
-            if any(kw in ev.lower() for ev in visual_evidence):
+            if any(_kw_hit(kw, ev.lower()) for ev in visual_evidence):
                 score += 0.4
-            if florence_caption and kw in florence_caption.lower():
+            if florence_caption and _kw_hit(kw, florence_caption.lower()):
                 score += 0.3
         if score > 0:
             visual_candidates.append({"genre": g, "score": min(score, 1.0)})
@@ -603,15 +702,34 @@ GAME_PLAN_SYSTEM_PROMPT = """You are an expert AAA Game Designer, Technical Dire
 You receive a resolved genre, visual scene understanding data, layout coordinates, and user requests.
 Your absolute first command is to obey the resolved genre. Do not change it.
 
+CRITICAL - GENRE PURITY RULE: The "genre" field has already been finally decided by the
+backend (see RESOLVED GENRE below) and always wins over anything you see in the sketch,
+caption, or detected objects. If the sketch/caption/detected-objects describe something that
+CONTRADICTS the resolved genre (e.g. the sketch looks like a car but the resolved genre is
+"fighting"), you MUST treat that contradicting content as irrelevant noise and design every
+field - title, theme, description, assets, video_prompt - purely around the resolved genre.
+Never blend a contradicting sketch subject into the theme (e.g. do not invent a "car fighter"
+or give a fighting-game character a vehicle). Only use the sketch/caption for genre-consistent
+details (layout, mood, color, setting) when they do not conflict with the resolved genre.
+
+CRITICAL - SHORT PROMPT RULE: The user prompt may be very short or casual (e.g. "fun shooting
+game", "make it a cool racer"). Treat that as a complete, confident creative brief, not a reason
+to be generic or hedge. Invent a specific, vivid title, theme, setting, and asset descriptions
+appropriate to the resolved genre and to whatever mood words are present ("fun", "cool", "epic",
+"scary", etc. should shape the tone/art direction) - never fall back to bland placeholder names.
+
 Under the "genre_specific" field in the JSON output, you must provide genre-appropriate parameters:
 - For racing: {"track_type": "city circuit", "laps": 3, "boost": true, "opponents": 3, "checkpoints": 5}
 - For fighting: {"rounds": 3, "health": 100, "special_meter": 100, "arena_boundary": true}
+- For shooting: {"ammo_max": 30, "reload_time": 1.5, "waves": 5, "weapon_type": "rifle", "has_cover": true}
 - For adventure: {"quests": 3, "npc_count": 2, "map_size": "medium", "keys_required": 1}
 - For dungeon: {"rooms": 4, "boss_health": 200, "keys": 2, "has_minimap": true}
 - For strategy: {"max_units": 50, "resource_types": ["gold", "wood"], "has_fog_of_war": true}
 - For platformer: {"jump_height": 3, "checkpoint_count": 2, "lives": 3}
 - For tower_defense: {"waves": 10, "tower_types": ["cannon", "slow", "rapid"], "enemy_path": true, "base_health": 20}
 - For running: {"lanes": 3, "initial_speed": 5, "multiplier": 1.1, "has_obstacles": true}
+- For puzzle: {"grid_size": [8, 8], "match_length": 3, "move_limit": 20, "target_score": 5000}
+- For sports: {"match_length_sec": 90, "team_size": 5, "difficulty_ai": "medium", "has_powerups": false}
 
 Provide your response in raw JSON format (no markdown, no backticks):
 {
@@ -1636,6 +1754,7 @@ def generate_all_assets(game_plan, save_dir, job_id=None):
     theme_lower = theme.lower()
 
     # Genre flags
+    is_shooting = "shoot" in genre_lower or "fps" in genre_lower or "gun" in genre_lower
     is_racing   = "rac" in genre_lower or "car"      in genre_lower
     is_fighting = "fight" in genre_lower or "arena"  in genre_lower
     is_dungeon  = "dungeon" in genre_lower
@@ -1643,6 +1762,8 @@ def generate_all_assets(game_plan, save_dir, job_id=None):
     is_td       = "tower" in genre_lower or "defense" in genre_lower
     is_running  = "running" in genre_lower or "runner" in genre_lower
     is_adventure= "adventure" in genre_lower
+    is_puzzle   = "puzzle" in genre_lower
+    is_sports   = "sport" in genre_lower
 
     # Quality prefix: modern AAA game art style, NOT 16-bit
     def quality_prefix(style):
@@ -1654,7 +1775,15 @@ def generate_all_assets(game_plan, save_dir, job_id=None):
         # Use GPT-planned asset prompt if available
         gpt_prompt = assets.get(key, "")
 
-        if is_racing:
+        if is_shooting:
+            BASE = "modern first/third-person shooter game art style, tactical military look"
+            PROMPTS = {
+                "player":        f"{quality_prefix(BASE)}, tactical soldier hero character holding assault rifle, combat vest, helmet, aiming pose, full body sprite",
+                "enemy":         f"{quality_prefix(BASE)}, hostile enemy gunner in dark tactical gear, red laser sight, aggressive stance, full body sprite",
+                "platform_tile": f"{quality_prefix('shooter game')}, concrete cover crate / sandbag barricade tile, battle-worn texture, top-down/side view",
+                "background":    f"war-torn battlefield background, ruined buildings, smoke, muzzle-flash lighting, overcast sky, ultra wide game background, 16:9",
+            }
+        elif is_racing:
             BASE = "modern racing game art style, high-fidelity 3D-rendered look"
             PROMPTS = {
                 "player":        f"{quality_prefix(BASE)}, red supercar racing vehicle, side view, aerodynamic body, chrome rims, LED headlights, bold livery",
@@ -1709,6 +1838,22 @@ def generate_all_assets(game_plan, save_dir, job_id=None):
                 "enemy":         f"{quality_prefix(BASE)}, ferocious green dragon enemy, wings spread, glowing red eyes, sharp claws, full body sprite",
                 "platform_tile": f"{quality_prefix('adventure game')}, grassy ground platform tile, dirt and grass texture, side view",
                 "background":    f"lush fantasy adventure world background, enchanted forest, mountains, glowing portal, waterfalls, ultra wide 16:9",
+            }
+        elif is_puzzle:
+            BASE = "colorful casual puzzle game art, bejeweled / match-3 style"
+            PROMPTS = {
+                "player":        f"{quality_prefix(BASE)}, single glowing gemstone puzzle piece, faceted crystal, vivid saturated color, icon centered on white background",
+                "enemy":         f"{quality_prefix(BASE)}, cracked stone blocker tile with warning spikes, obstacle piece that blocks matches, icon on white background",
+                "platform_tile": f"{quality_prefix('puzzle board game')}, glossy square board grid cell, subtle bevel edge, soft inner shadow, top-down view",
+                "background":    f"soft colorful puzzle game background, candy-colored bokeh shapes, gentle gradient, cheerful casual mobile game backdrop, ultra wide 16:9",
+            }
+        elif is_sports:
+            BASE = "stylized modern sports video game art"
+            PROMPTS = {
+                "player":        f"{quality_prefix(BASE)}, athletic player character in bold team jersey, dynamic mid-action running pose, full body sprite",
+                "enemy":         f"{quality_prefix(BASE)}, rival team defender character in contrasting jersey colors, defensive stance, full body sprite",
+                "platform_tile": f"{quality_prefix('sports game')}, painted turf/court tile, white line marking, top-down view",
+                "background":    f"packed stadium arena background, bright floodlights, cheering crowd silhouettes, scoreboard, ultra wide 16:9",
             }
         else:
             # Default platformer
@@ -2040,6 +2185,124 @@ def render_strategy(best_assets, layout_json, game_plan, tile_size, canvas_width
     draw.text((20, canvas_height - 30), "GOLD: 750   WOOD: 400   UNITS: 15/50", fill=(255, 215, 0, 255))
     return canvas.convert("RGB")
 
+def render_shooting(best_assets, layout_json, game_plan, tile_size, canvas_width, canvas_height, include_sprites):
+    bg = best_assets.get("background")
+    if bg:
+        canvas = bg.resize((canvas_width, canvas_height), Image.LANCZOS).convert("RGBA")
+    else:
+        canvas = draw_parallax_sky(canvas_width, canvas_height, game_plan)
+    draw = ImageDraw.Draw(canvas)
+
+    if include_sprites:
+        player_sprite = best_assets.get("player")
+        if player_sprite:
+            p1 = remove_flat_background(player_sprite).resize((130, 130), Image.NEAREST).convert("RGBA")
+            canvas.paste(p1, (int(canvas_width * 0.14), int(canvas_height * 0.55)), p1)
+            # Muzzle flash + tracer toward the enemy
+            gun_x, gun_y = int(canvas_width * 0.14) + 110, int(canvas_height * 0.55) + 55
+            draw.ellipse([gun_x, gun_y - 6, gun_x + 14, gun_y + 6], fill=(255, 230, 120, 255))
+            draw.line([gun_x, gun_y, int(canvas_width * 0.75), int(canvas_height * 0.60)],
+                      fill=(255, 220, 80, 180), width=2)
+
+        enemy_sprite = best_assets.get("enemy")
+        if enemy_sprite:
+            e1 = remove_flat_background(enemy_sprite).resize((130, 130), Image.NEAREST).convert("RGBA")
+            e1 = e1.transpose(Image.FLIP_LEFT_RIGHT)
+            canvas.paste(e1, (int(canvas_width * 0.72), int(canvas_height * 0.55)), e1)
+
+        cover = best_assets.get("platform_tile")
+        if cover:
+            c = remove_flat_background(cover).resize((80, 80), Image.NEAREST).convert("RGBA")
+            canvas.paste(c, (int(canvas_width * 0.42), int(canvas_height * 0.72)), c)
+
+    _draw_shooter_hud(draw, canvas_width, canvas_height)
+    return canvas.convert("RGB")
+
+def render_puzzle(best_assets, layout_json, game_plan, tile_size, canvas_width, canvas_height, include_sprites):
+    bg = best_assets.get("background")
+    if bg:
+        canvas = bg.resize((canvas_width, canvas_height), Image.LANCZOS).convert("RGBA")
+    else:
+        canvas = Image.new("RGBA", (canvas_width, canvas_height), (30, 20, 45, 255))
+    draw = ImageDraw.Draw(canvas)
+
+    cols, rows = 7, 6
+    board_w, board_h = int(canvas_width * 0.55), int(canvas_height * 0.85)
+    board_x, board_y = (canvas_width - board_w) // 2, int(canvas_height * 0.08)
+    cell_w, cell_h = board_w // cols, board_h // rows
+
+    gem_tile = best_assets.get("platform_tile")
+    blocker_tile = best_assets.get("enemy")
+    gem_icon = best_assets.get("player")
+    palette = [(230, 70, 90), (70, 160, 230), (250, 200, 60), (100, 210, 120), (190, 100, 230)]
+
+    random.seed(7)
+    for r in range(rows):
+        for c in range(cols):
+            cx, cy = board_x + c * cell_w, board_y + r * cell_h
+            if gem_tile:
+                cell = gem_tile.resize((cell_w - 4, cell_h - 4), Image.LANCZOS).convert("RGBA")
+                canvas.paste(cell, (cx + 2, cy + 2), cell)
+            else:
+                draw.rectangle([cx + 2, cy + 2, cx + cell_w - 2, cy + cell_h - 2], fill=(60, 45, 90, 255))
+            if include_sprites and random.random() > 0.15:
+                color = random.choice(palette)
+                pad = int(min(cell_w, cell_h) * 0.18)
+                if gem_icon and random.random() > 0.5:
+                    icon = remove_flat_background(gem_icon).resize(
+                        (cell_w - pad * 2, cell_h - pad * 2), Image.LANCZOS).convert("RGBA")
+                    canvas.paste(icon, (cx + pad, cy + pad), icon)
+                else:
+                    draw.ellipse([cx + pad, cy + pad, cx + cell_w - pad, cy + cell_h - pad], fill=(*color, 255))
+
+    if include_sprites and blocker_tile:
+        b = remove_flat_background(blocker_tile).resize((cell_w - 6, cell_h - 6), Image.LANCZOS).convert("RGBA")
+        canvas.paste(b, (board_x + 2 * cell_w + 3, board_y + 3 * cell_h + 3), b)
+
+    draw.rectangle([board_x, board_y, board_x + board_w, board_y + board_h], outline=(255, 255, 255, 200), width=3)
+    draw.rectangle([10, 10, 230, 55], fill=(20, 15, 35, 220), outline=(255, 215, 0, 255), width=2)
+    draw.text((20, 16), "MOVES: 18   SCORE: 3200", fill=(255, 255, 255, 255))
+    return canvas.convert("RGB")
+
+def render_sports(best_assets, layout_json, game_plan, tile_size, canvas_width, canvas_height, include_sprites):
+    bg = best_assets.get("background")
+    if bg:
+        canvas = bg.resize((canvas_width, canvas_height), Image.LANCZOS).convert("RGBA")
+    else:
+        canvas = Image.new("RGBA", (canvas_width, canvas_height), (30, 110, 55, 255))
+    draw = ImageDraw.Draw(canvas)
+
+    field_top = int(canvas_height * 0.60)
+    field_tile = best_assets.get("platform_tile")
+    if field_tile:
+        strip = field_tile.resize((canvas_width, canvas_height - field_top), Image.LANCZOS).convert("RGBA")
+        canvas.paste(strip, (0, field_top), strip)
+    else:
+        draw.rectangle([0, field_top, canvas_width, canvas_height], fill=(35, 130, 60, 255))
+    draw.line([0, (field_top + canvas_height) // 2, canvas_width, (field_top + canvas_height) // 2],
+              fill=(255, 255, 255, 150), width=2)
+    draw.rectangle([canvas_width - 40, field_top + 20, canvas_width - 6, canvas_height - 20],
+                    outline=(255, 255, 255, 220), width=3)
+
+    if include_sprites:
+        player_sprite = best_assets.get("player")
+        if player_sprite:
+            p1 = remove_flat_background(player_sprite).resize((120, 120), Image.NEAREST).convert("RGBA")
+            canvas.paste(p1, (int(canvas_width * 0.25), field_top - 60), p1)
+
+        enemy_sprite = best_assets.get("enemy")
+        if enemy_sprite:
+            p2 = remove_flat_background(enemy_sprite).resize((120, 120), Image.NEAREST).convert("RGBA")
+            p2 = p2.transpose(Image.FLIP_LEFT_RIGHT)
+            canvas.paste(p2, (int(canvas_width * 0.55), field_top - 50), p2)
+
+        draw.ellipse([int(canvas_width * 0.40), field_top - 12, int(canvas_width * 0.40) + 16, field_top + 4],
+                     fill=(255, 255, 255, 255))
+
+    draw.rectangle([10, 10, 220, 50], fill=(10, 10, 10, 220), outline=(255, 255, 255, 255), width=2)
+    draw.text((20, 16), "SCORE 1 - 0   TIME 02:45", fill=(255, 255, 255, 255))
+    return canvas.convert("RGB")
+
 def render_platformer(best_assets, layout_json, game_plan, tile_size, canvas_width, canvas_height, include_sprites):
     bg = best_assets.get("background")
     if bg:
@@ -2162,7 +2425,9 @@ def render_running(best_assets, layout_json, game_plan, tile_size, canvas_width,
 def compose_scene(best_assets, layout_json, game_plan, tile_size=32, canvas_width=1024, canvas_height=480, include_sprites=True):
     genre_lower = (game_plan.get("genre", "") if game_plan else "").lower()
     
-    if "rac" in genre_lower:
+    if "shoot" in genre_lower or "fps" in genre_lower:
+        return render_shooting(best_assets, layout_json, game_plan, tile_size, canvas_width, canvas_height, include_sprites)
+    elif "rac" in genre_lower:
         return render_racing(best_assets, layout_json, game_plan, tile_size, canvas_width, canvas_height, include_sprites)
     elif "fight" in genre_lower:
         return render_fighting(best_assets, layout_json, game_plan, tile_size, canvas_width, canvas_height, include_sprites)
@@ -2176,6 +2441,10 @@ def compose_scene(best_assets, layout_json, game_plan, tile_size=32, canvas_widt
         return render_tower_defense(best_assets, layout_json, game_plan, tile_size, canvas_width, canvas_height, include_sprites)
     elif "run" in genre_lower:
         return render_running(best_assets, layout_json, game_plan, tile_size, canvas_width, canvas_height, include_sprites)
+    elif "puzzle" in genre_lower:
+        return render_puzzle(best_assets, layout_json, game_plan, tile_size, canvas_width, canvas_height, include_sprites)
+    elif "sport" in genre_lower:
+        return render_sports(best_assets, layout_json, game_plan, tile_size, canvas_width, canvas_height, include_sprites)
     else:
         return render_platformer(best_assets, layout_json, game_plan, tile_size, canvas_width, canvas_height, include_sprites)
 
@@ -2333,6 +2602,17 @@ def generate_preview_video(bg_img, layout, path, assets, output_path, game_plan=
     item_img = assets.get("item")
     if item_img: item_img = item_img.resize((int(W*0.05), int(H*0.08)), Image.LANCZOS)
 
+    # Puzzle board geometry + gem icon, precomputed once (not per-frame/per-cell)
+    PUZZLE_COLS, PUZZLE_ROWS = 7, 5
+    puzzle_board_w, puzzle_board_h = int(W * 0.62), int(H * 0.82)
+    puzzle_board_x, puzzle_board_y = (W - puzzle_board_w) // 2, int(H * 0.08)
+    puzzle_cell_w, puzzle_cell_h = puzzle_board_w // PUZZLE_COLS, puzzle_board_h // PUZZLE_ROWS
+    puzzle_gem_icon = assets.get("player")
+    if puzzle_gem_icon:
+        pad = int(min(puzzle_cell_w, puzzle_cell_h) * 0.2)
+        puzzle_gem_icon = puzzle_gem_icon.resize(
+            (max(4, puzzle_cell_w - pad * 2), max(4, puzzle_cell_h - pad * 2)), Image.LANCZOS)
+
     gif_path = output_path.replace(".mp4", ".gif")
     
     import imageio
@@ -2444,7 +2724,56 @@ def generate_preview_video(bg_img, layout, path, assets, output_path, game_plan=
                 draw.rectangle([W//2 - 20, 10, W//2 + 20, 50], fill=(0,0,0,255), outline=(255,255,255,255))
                 draw.text((W//2 - 8, 25), f"{99 - (i//15)}", fill=(255,255,255,255))
 
-            # --- 3. TOWER DEFENSE / SHOOTING ---
+            # --- 3. SHOOTING ---
+            elif genre == "shooting":
+                floor_y = int(H * 0.82)
+                draw.rectangle([0, floor_y, W, H], fill=(45, 42, 38, 255))
+
+                player_x, player_y = int(W * 0.18), floor_y
+                # Muzzle fires in short bursts rather than every frame
+                fire_tick = i % 12
+                is_firing = fire_tick < 3
+                recoil = -3 if is_firing else 0
+
+                if player_img:
+                    frame.paste(player_img, (player_x - player_img.width // 2 + recoil, player_y - player_img.height),
+                                player_img if player_img.mode == 'RGBA' else None)
+
+                # 3 waves of 3 enemies advancing from the right; each is shot down before reaching the player
+                wave = min(i // 50, 2)
+                wave_offset = i % 50
+                gun_x = player_x + int(W * 0.06) + recoil
+                gun_y = player_y - int(H * 0.10)
+
+                for slot in range(3):
+                    e_t = wave_offset - (slot * 10)
+                    if e_t < 0 or e_t > 40:
+                        continue
+                    progress = e_t / 40.0
+                    e_x = int(W * 0.88 - progress * W * 0.55)
+                    e_y = player_y
+                    hit = progress > 0.75  # taken out just before reaching the player
+
+                    if not hit:
+                        if enemy_img:
+                            eimg = enemy_img.transpose(Image.FLIP_LEFT_RIGHT)
+                            frame.paste(eimg, (e_x - eimg.width // 2, e_y - eimg.height), eimg if eimg.mode == 'RGBA' else None)
+                            if is_firing:
+                                draw.line([gun_x, gun_y, e_x, e_y - eimg.height // 2], fill=(255, 220, 80, 200), width=2)
+                    else:
+                        fade = max(0.0, 1.0 - (progress - 0.75) / 0.25)
+                        if fade > 0:
+                            a = int(200 * fade)
+                            draw.ellipse([e_x - 18, e_y - 40, e_x + 18, e_y - 4], fill=(255, 150, 40, a))
+
+                if is_firing:
+                    draw.ellipse([gun_x, gun_y - 6, gun_x + 16, gun_y + 6], fill=(255, 235, 140, 255))
+
+                # UI HUD (ammo/HP box) + wave/score readout
+                _draw_shooter_hud(draw, W, H)
+                draw.text((20, 20), f"WAVE {wave + 1}/3   SCORE: {int(i * 12.5)}", fill=(255, 255, 255, 255))
+
+            # --- 4. TOWER DEFENSE / STRATEGY ---
             elif genre == "tower_defense" or genre == "strategy":
                 tower_x, tower_y = int(W * 0.2), int(H * 0.5)
                 
@@ -2475,7 +2804,90 @@ def generate_preview_video(bg_img, layout, path, assets, output_path, game_plan=
                     else: # Explosion
                         draw.ellipse([creep_x-20, creep_y-20, creep_x+20, creep_y+20], fill=(255, 100, 0, 200))
                         
-            # --- 4. PLATFORMER / RUNNING / ADVENTURE / DUNGEON ---
+            # --- 5. PUZZLE ---
+            elif genre == "puzzle":
+                draw.rectangle([puzzle_board_x - 4, puzzle_board_y - 4,
+                                puzzle_board_x + puzzle_board_w + 4, puzzle_board_y + puzzle_board_h + 4],
+                               outline=(255, 255, 255, 180), width=2)
+
+                epoch = i // 40           # a "match" resolves once per ~2.6s epoch
+                epoch_frame = i % 40
+                palette = [(230, 70, 90), (70, 160, 230), (250, 200, 60), (100, 210, 120), (190, 100, 230)]
+
+                matched_cells = set()
+                if epoch_frame < 10:
+                    rr = random.Random(epoch)
+                    row_pick = rr.randint(0, PUZZLE_ROWS - 1)
+                    col_pick = rr.randint(0, PUZZLE_COLS - 3)
+                    matched_cells = {(row_pick, col_pick), (row_pick, col_pick + 1), (row_pick, col_pick + 2)}
+
+                for r in range(PUZZLE_ROWS):
+                    for c in range(PUZZLE_COLS):
+                        cx = puzzle_board_x + c * puzzle_cell_w
+                        cy = puzzle_board_y + r * puzzle_cell_h
+                        draw.rectangle([cx + 2, cy + 2, cx + puzzle_cell_w - 2, cy + puzzle_cell_h - 2],
+                                       fill=(45, 35, 70, 255))
+                        pad = int(min(puzzle_cell_w, puzzle_cell_h) * 0.2)
+                        if (r, c) in matched_cells and epoch_frame < 8:
+                            flash = 255 if (epoch_frame % 4) < 2 else 210
+                            draw.ellipse([cx + pad, cy + pad, cx + puzzle_cell_w - pad, cy + puzzle_cell_h - pad],
+                                         fill=(flash, flash, 240, 255))
+                        else:
+                            cell_seed = (r * PUZZLE_COLS + c) * 7919 + epoch
+                            if puzzle_gem_icon and cell_seed % 3 == 0:
+                                frame.paste(puzzle_gem_icon, (cx + pad, cy + pad),
+                                            puzzle_gem_icon if puzzle_gem_icon.mode == 'RGBA' else None)
+                            else:
+                                color = palette[cell_seed % len(palette)]
+                                draw.ellipse([cx + pad, cy + pad, cx + puzzle_cell_w - pad, cy + puzzle_cell_h - pad],
+                                             fill=(*color, 255))
+
+                moves_left = max(0, 18 - epoch)
+                score = epoch * 250 + max(0, 250 - epoch_frame * 8)
+                draw.rectangle([10, 10, 230, 45], fill=(15, 10, 25, 220))
+                draw.text((20, 16), f"MOVES: {moves_left}   SCORE: {score}", fill=(255, 255, 255, 255))
+
+            # --- 6. SPORTS ---
+            elif genre == "sports":
+                field_top = int(H * 0.55)
+                draw.rectangle([0, field_top, W, H], fill=(35, 130, 60, 255))
+                draw.line([0, (field_top + H) // 2, W, (field_top + H) // 2], fill=(255, 255, 255, 130), width=2)
+                draw.rectangle([W - 34, field_top + 14, W - 6, H - 14], outline=(255, 255, 255, 220), width=3)
+
+                # Player dribbles from left toward the goal, defender tracks and briefly closes in
+                possession_cycle = i % 75
+                p_x = int(W * 0.20 + (possession_cycle / 75.0) * W * 0.55)
+                p_y = field_top - 55
+                d_x = int(W * 0.30 + (possession_cycle / 75.0) * W * 0.50)
+                d_y = field_top - 60 + int(math.sin(i * 0.3) * 6)
+
+                # Ball hugs the player, then shoots into the goal in the last stretch
+                scoring = possession_cycle > 62
+                if scoring:
+                    shoot_t = (possession_cycle - 62) / 13.0
+                    ball_x = int(p_x + shoot_t * (W - 20 - p_x))
+                    ball_y = int(p_y + 30 - shoot_t * 10)
+                else:
+                    ball_x, ball_y = p_x + 30, p_y + 34
+
+                if player_img:
+                    frame.paste(player_img, (p_x - player_img.width // 2, p_y - player_img.height),
+                                player_img if player_img.mode == 'RGBA' else None)
+                if enemy_img:
+                    eimg = enemy_img.transpose(Image.FLIP_LEFT_RIGHT)
+                    frame.paste(eimg, (d_x - eimg.width // 2, d_y - eimg.height), eimg if eimg.mode == 'RGBA' else None)
+
+                draw.ellipse([ball_x - 6, ball_y - 6, ball_x + 6, ball_y + 6], fill=(255, 255, 255, 255))
+
+                if scoring and possession_cycle > 72:
+                    draw.text((W - 90, field_top - 10), "GOAL!", fill=(255, 215, 0, 255))
+
+                score_home = 1 + (i // 75)
+                mins_left = max(0, 90 - int((i / TOTAL_FRAMES) * 90))
+                draw.rectangle([10, 10, 220, 45], fill=(10, 10, 10, 220), outline=(255, 255, 255, 255), width=2)
+                draw.text((20, 16), f"SCORE {score_home} - 0   {mins_left:02d}:00", fill=(255, 255, 255, 255))
+
+            # --- 7. PLATFORMER / RUNNING / ADVENTURE / DUNGEON ---
             else:
                 # Camera tracking & Parallax
                 cam_x = int((i / TOTAL_FRAMES) * W * 1.5)
