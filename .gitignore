@@ -3,18 +3,28 @@ node_modules/
 __pycache__/
 *.pyc
 
-# Environment & Keys
+# Environment & Sensitive Keys
 .env
 .env.local
+*.env
 
-# Builds & Outputs
+# Builds & Generated Outputs
 frontend/dist/
 backend/api_output/
+api_output/
+test_sprites_*/
+backend/test_sprites_*/
 *.zip
 *.mp4
+*.gif
+*.webm
+test_dummy_sketch.png
+dummy_sketch.jpg
+test_vid.py
 
 # Model Checkpoints & Large Data
 dataset/
 florence_game_lora_checkpoints/
+models/
 *.pth
 *.safetensors

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 
-const API_URL = "https://fyp-1nwy.onrender.com";
+const API_URL = import.meta.env.VITE_API_URL || (typeof window !== "undefined" && window.location.hostname !== "localhost" ? "https://fyp-1nwy.onrender.com" : "http://localhost:7860");
 
 export default function App() {
   const [sketch, setSketch] = useState(null);
