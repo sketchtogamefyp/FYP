@@ -15,13 +15,14 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 
 import zipfile
+import torch
+from fastapi.responses import FileResponse, JSONResponse
 import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse, FileResponse
 from openai import OpenAI
 
 from prompt_config import (
@@ -698,6 +699,18 @@ def resolve_genre(user_description, florence_caption, florence_od, layout, visio
 
 
 GAME_PLAN_SYSTEM_PROMPT = """You are an expert AAA Game Designer, Technical Director, and AI Planning Engine.
+
+STRICT GENRE DEFINITIONS:
+- Fighting: Combat games where players battle opponents using attacks, combos, and special abilities.
+- Adventure: Exploration-based games where players discover worlds, complete missions, and overcome challenges.
+- Dungeon: Games centered around exploring dangerous dungeons, defeating enemies, and collecting loot.
+- Strategy: Games where players use planning, tactics, and resource management to defeat opponents.
+- Mario: Platform games where players run, jump, avoid obstacles, defeat enemies, and reach the goal.
+- Tower Defense: Games where players place defensive towers to stop waves of enemies from reaching a target.
+- Running: Fast-paced games where players continuously run while avoiding obstacles and collecting rewards.
+- Adventure Fighting: Games combining exploration and story-driven adventures with real-time combat against enemies.
+
+You MUST follow the above genre definitions and mechanics perfectly when outputting the JSON.
 
 You receive a resolved genre, visual scene understanding data, layout coordinates, and user requests.
 Your absolute first command is to obey the resolved genre. Do not change it.
@@ -1787,8 +1800,8 @@ def generate_all_assets(game_plan, save_dir, job_id=None):
         elif is_racing:
             BASE = "modern racing game art style, high-fidelity 3D-rendered look"
             PROMPTS = {
-                "player":        f"{quality_prefix(BASE)}, red supercar racing vehicle, side view, aerodynamic body, chrome rims, LED headlights, bold livery",
-                "enemy":         f"{quality_prefix(BASE)}, blue rival sports car, side view, sleek aerodynamic body, aggressive bumper, glowing tail lights",
+                "player":        f"{quality_prefix(BASE)}, red supercar racing vehicle, rear view, driving away into the distance, facing forward, aerodynamic body, chrome rims, LED headlights",
+                "enemy":         f"{quality_prefix(BASE)}, blue rival sports car, rear view, driving away into the distance, facing forward, sleek aerodynamic body, aggressive bumper",
                 "platform_tile": f"{quality_prefix('racing game')}, asphalt race track tile, yellow dashed center line, grip surface texture, top-down view",
                 "background":    f"cyberpunk night city racing panorama, neon lit skyline, rain-wet road reflections, motion blur lights, ultra wide game background, 16:9",
             }
@@ -1875,8 +1888,8 @@ def generate_all_assets(game_plan, save_dir, job_id=None):
     configs = {
         "player":        {"prompt": get_dynamic_prompt("player",        "hero character sprite"), "width": 512, "height": 512, "num": 2, "progress": 40},
         "enemy":         {"prompt": get_dynamic_prompt("enemy",         "enemy character sprite"), "width": 512, "height": 512, "num": 2, "progress": 55},
-        "platform_tile": {"prompt": get_dynamic_prompt("platform_tile", "terrain tile"),           "width": 512, "height": 512, "num": 2, "progress": 70},
-        "background":    {"prompt": get_dynamic_prompt("background",    "game environment scene"), "width": 1024,"height": 512, "num": 2, "progress": 82},
+        "platform_tile": {"prompt": get_dynamic_prompt("platform_tile", "terrain tile"),           "width": 512, "height": 512, "num": 1, "progress": 70},
+        "background":    {"prompt": get_dynamic_prompt("background",    "game environment scene"), "width": 1024,"height": 512, "num": 1, "progress": 82},
     }
 
     use_fast_mode = (DEVICE == "cpu")
@@ -2618,8 +2631,6 @@ def generate_preview_video(bg_img, layout, path, assets, output_path, game_plan=
         puzzle_gem_icon = puzzle_gem_icon.resize(
             (max(4, puzzle_cell_w - pad * 2), max(4, puzzle_cell_h - pad * 2)), Image.LANCZOS)
 
-    gif_path = output_path.replace(".mp4", ".gif")
-    
     import imageio
     try:
         # Stream directly to MP4 using imageio-ffmpeg (H.264) to bypass browser incompatibility and RAM OOM
@@ -2633,40 +2644,59 @@ def generate_preview_video(bg_img, layout, path, assets, output_path, game_plan=
             
             # --- 1. RACING ---
             if genre == "racing":
-                # Side-Scrolling 2D Race Track
-                road_y = int(H * 0.75)
-                draw.rectangle([0, road_y, W, H], fill=(40, 40, 45, 255))
+                # Mode-7 Style 3D Road
+                horizon = int(H * 0.55)
                 
-                # Parallax road stripes (moving right to left)
-                stripe_offset = (i * 15) % 100
-                for stripe in range(-1, int(W/100) + 2):
-                    sx = stripe * 100 - stripe_offset
-                    draw.rectangle([sx, road_y + 20, sx + 40, road_y + 25], fill=(255,200,0,255))
+                # Draw ground
+                draw.rectangle([0, horizon, W, H], fill=(50, 50, 55, 255))
                 
-                # Camera parallax bg
-                cam_x_bg = (i * 3) % W
-                frame.paste(base_bg, (-cam_x_bg, 0))
-                frame.paste(base_bg, (W - cam_x_bg, 0))
+                # Draw distant scenery
+                frame.paste(base_bg, (0, int(math.sin(i*0.01)*5) - 30))
                 
-                # Player car
-                car_x = int(W * 0.3)
-                car_y = road_y + 35
+                # Road perspective lines
+                road_w_bottom = W * 0.95
+                road_w_top = W * 0.15
+                road_pts = [(W/2 - road_w_top/2, horizon), (W/2 + road_w_top/2, horizon), 
+                            (W/2 + road_w_bottom/2, H), (W/2 - road_w_bottom/2, H)]
+                draw.polygon(road_pts, fill=(80, 80, 85, 255))
                 
-                # Rival car overtaking and falling behind
-                rival_progress = math.sin(i * 0.05)
-                rival_x = int(W * 0.6) + int(rival_progress * W * 0.4)
-                rival_y = road_y + 5 # Slightly deeper in the z-axis
+                # Moving dashed lines
+                offset = (i * 0.8) % 1.0
+                for strip in range(6):
+                    z1 = (strip + offset) / 6.0
+                    z2 = (strip + offset + 0.5) / 6.0
+                    if z1 > 1.0: continue
+                    z2 = min(z2, 1.0)
+                    
+                    y1 = horizon + (H - horizon) * (z1**2)
+                    y2 = horizon + (H - horizon) * (z2**2)
+                    draw.polygon([(W/2-3, y1), (W/2+3, y1), (W/2+5, y2), (W/2-5, y2)], fill=(255,220,0,255))
+                
+                # Cars
+                steer = math.sin(i * 0.05)
+                car_x = int(W*0.5 + steer * W*0.3)
+                car_y = int(H*0.85)
+                
+                # Rival car
+                rival_z = (i * 0.03) % 2.0
+                if rival_z > 1.0: rival_z = 2.0 - rival_z 
+                rival_y = int(horizon + (H - horizon) * (rival_z**2))
+                rival_scale = 0.2 + 0.6 * (rival_z**2)
                 
                 if enemy_img:
-                    frame.paste(enemy_img, (rival_x - enemy_img.width//2, rival_y - enemy_img.height), enemy_img if enemy_img.mode == 'RGBA' else None)
+                    scaled_e = enemy_img.resize((int(enemy_img.width * rival_scale), int(enemy_img.height * rival_scale)), Image.LANCZOS)
+                    rival_x = int(W*0.5 - W*0.15 * rival_scale)
+                    frame.paste(scaled_e, (rival_x - scaled_e.width//2, rival_y - scaled_e.height), scaled_e if scaled_e.mode == 'RGBA' else None)
                     
                 if player_img:
-                    frame.paste(player_img, (car_x - player_img.width//2, car_y - player_img.height), player_img if player_img.mode == 'RGBA' else None)
+                    player_scale = 0.6
+                    scaled_p = player_img.resize((int(player_img.width * player_scale), int(player_img.height * player_scale)), Image.LANCZOS)
+                    frame.paste(scaled_p, (car_x - scaled_p.width//2, car_y - scaled_p.height), scaled_p if scaled_p.mode == 'RGBA' else None)
                     
                 # UI HUD
                 draw.rectangle([W-120, 20, W-20, 70], fill=(0,0,0,150), outline=(255,255,255,255))
                 draw.text((W-110, 25), "LAP: 2/3", fill=(255,255,255,255))
-                draw.text((W-110, 45), f"SPEED: 180 km/h", fill=(0,255,0,255))
+                draw.text((W-110, 45), f"SPEED: {int(160 + abs(steer)*20)} km/h", fill=(0,255,0,255))
                 
             # --- 2. FIGHTING / ADVENTURE FIGHTING ---
             elif genre == "fighting":
@@ -2836,7 +2866,7 @@ def generate_preview_video(bg_img, layout, path, assets, output_path, game_plan=
 
                 moves_left = max(0, 18 - epoch)
                 score = epoch * 250 + max(0, 250 - epoch_frame * 8)
-                draw.rectangle([10, 10, 230, 45], fill=(15, 10, 25, 220))
+                draw.rectangle([10, 10, 230, 45], fill=(15, 10, 35, 220))
                 draw.text((20, 16), f"MOVES: {moves_left}   SCORE: {score}", fill=(255, 255, 255, 255))
 
             # --- 6. SPORTS ---
@@ -3034,7 +3064,7 @@ def run_full_pipeline(image_path, user_description="Create a game based on the p
     set_job_status(job_id, "Rendering gameplay preview video...", 98, "Creating animated preview (MP4 or GIF)")
     clean_bg = compose_scene(best_assets, layout, game_plan, include_sprites=False)
     try:
-        generate_preview_video(clean_bg, layout, path, best_assets, preview_mp4, game_plan=game_plan)
+        generate_preview_video(clean_bg, layout, image_path, best_assets, preview_mp4, game_plan=game_plan)
     except Exception as e:
         print(f"Preview video generation note: {e}")
     # Determine which file was actually created
@@ -3075,7 +3105,7 @@ def run_full_pipeline(image_path, user_description="Create a game based on the p
             "preview": (f"/files/{job_id}/{os.path.basename(preview_path)}?v={ts}"
                         if preview_path else None),
         },
-        "zip_url": f"/files/{job_id}/{zip_filename}?v={ts}"
+        "zip_url": f"/download-zip/{job_id}?v={ts}"
     }
 
     set_job_status(job_id, "Completed", 100, "Level generation finished successfully", result=result)
@@ -3143,6 +3173,13 @@ def status_endpoint(job_id: str):
     info = JOB_STATUS.get(job_id, {"status": "not_found", "progress": 0, "step": "Unknown job"})
     return JSONResponse(content=info)
 
+@app.get("/download-zip/{job_id}")
+def download_zip_endpoint(job_id: str):
+    zip_filename = f"game_assets_{job_id}.zip"
+    zip_path = os.path.join(API_OUTPUT_DIR, job_id, zip_filename)
+    if os.path.exists(zip_path):
+        return FileResponse(path=zip_path, filename=zip_filename, media_type='application/zip')
+    return JSONResponse(status_code=404, content={"error": "Zip file not found"})
 
 @app.get("/download-status")
 def download_status_endpoint():
@@ -3190,3 +3227,10 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 7860))
     uvicorn.run(app, host="0.0.0.0", port=port)
+@app.get("/download-zip/{job_id}")
+def download_zip_endpoint(job_id: str):
+    zip_filename = f"game_assets_{job_id}.zip"
+    zip_path = os.path.join(API_OUTPUT_DIR, job_id, zip_filename)
+    if os.path.exists(zip_path):
+        return FileResponse(path=zip_path, filename=zip_filename, media_type='application/zip')
+    return JSONResponse(status_code=404, content={"error": "Zip file not found"})
